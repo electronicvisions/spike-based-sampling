@@ -160,6 +160,7 @@ class Calibration(BaseModel):
     """
         Represents a calibration result.
     """
+    cfg_fields = ["duration", "num_samples", "std_range"]
     # configuration
     duration = pw.DoubleField(default=10000.)
     num_samples = pw.IntegerField(default=1000)
@@ -174,8 +175,6 @@ class Calibration(BaseModel):
     mean = pw.DoubleField()
     std = pw.DoubleField()
     g_tot = pw.DoubleField()
-
-    storage_fields = ["samples_v_rest", "samples_p_on"]
 
     # for book keeping
     date = pw.DateTimeField(default=datetime.datetime.now)
@@ -192,6 +191,7 @@ class Calibration(BaseModel):
 
         for src in filter(lambda x: x not in present_sources, sources):
             SourceCFGInCalibration.create(source=src, calibration=self)
+
 
     class Meta:
         order_by = ("-date",)

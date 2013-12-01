@@ -6,7 +6,8 @@ from scipy.special import erf
 
 
 def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
-        e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm):
+        e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm,
+        **sink): #sink is just to absorb unused parameter names
     """
     High Conductance State distribution
 
@@ -30,7 +31,7 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     # calculate effective (mean) membrane potential and time constant
 
     tau_eff = cm / g_tot
-    v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + El * g_l) / g_tot
+    v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + v_rest * g_l) / g_tot
 
     ####### calculate variance of membrane potential #######
 
@@ -50,7 +51,8 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
 
 
 def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
-        v_rest, tau_syn_E, tau_syn_I, g_l, cm):
+        v_rest, tau_syn_E, tau_syn_I, g_l, cm,
+        **sink): #sink is just to absorb unused parameter names
     """
         Vmem distribution
         Unit for rates is Hz!

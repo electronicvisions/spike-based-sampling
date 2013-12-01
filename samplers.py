@@ -266,6 +266,8 @@ class LIFsampler(object):
         self.db_calibration = db.Calibration(duration=duration,
                 num_samples=num_samples, std_range=std_range)
 
+        self._calc_distribution()
+
         # by importing here we avoid importing networking stuff until we have to
         from .calibration import calibrate_sampler
         calibrate_sampler(
@@ -284,3 +286,14 @@ class LIFsampler(object):
 
         return utils.get_all_source_parameters(self.db_sources)
 
+    def _calc_distribution(self):
+        dbc = self.db_calibration
+
+        dist = getattr(utils, "{}_distribution".format(self.pynn_model))
+
+        args = self.get_all_source_parameters()
+        kwargs = self.db_params.get_pynn_parameters()
+        # gl is not a pynn parameter
+        kwargs["gl"] = self.db_params.gl
+
+        dbc.mean, dbc.std, dbc.g_tot = dist(*args, **kwargs)
