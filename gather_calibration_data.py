@@ -5,6 +5,11 @@
     Gather calibration data in another process.
 """
 
+import sys
+import os.path as osp
+
+sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
+
 # NOTE: No relative imports here because the file will also be executed as
 #       script.
 from sbs import comm
@@ -85,7 +90,7 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
 
     num = calib_cfg["num_samples"]
 
-    samples_v_rest = np.linspace(mean-spread, mean+spead, num)
+    samples_v_rest = np.linspace(mean-spread, mean+spread, num)
 
     rates = np.array([src_cfg["rate"] for src_cfg in sources_cfg])
 
@@ -99,28 +104,29 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
         source_t = sim.SpikePoissonGenerator
 
     sources = sim.Population(len(rates), source_t(
-        duration=calib_cfg["duration"], start=0.))
+        stop=calib_cfg["duration"], start=0.))
 
     for src, rate in it.izip(sources, rates):
-        src.set(rate=rate)
+        src.rate = rate
 
     samplers = sim.Population(num, getattr(sim, neuron_model)(**neuron_params))
     samplers.record("spikes")
+    samplers.initialize(v=neuron_params["v_rest"])
 
     for sampler, v_rest in it.izip(samplers, samples_v_rest):
-        sampler.set(v_rest=v_rest)
+        samplerv_rest = v_rest
 
     # connect the two
     num_connections = len(samplers) * len(sources)
     projections = []
 
     for i, src_cfg in enumerate(sources_cfg):
-        src = sources[i, i:+1] # get a population view because only those can
+        src = sources[i:i+1] # get a population view because only those can
                                # be connected
         projections.append(sim.Projection(src, samplers,
             sim.AllToAllConnector(),
-            synapse_type=sim.StaticSynapse(weight=src_cfg.weight),
-            receptor_type=["inhibitory", "excitatory"][src_cfg.is_exc]))
+            synapse_type=sim.StaticSynapse(weight=src_cfg["weight"]),
+            receptor_type=["inhibitory", "excitatory"][src_cfg["is_exc"]]))
 
     log.info("Running simulation..")
     sim.run(calib_cfg["duration"])
@@ -130,21 +136,22 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
     num_spikes = np.array([len(s) for s in spiketrains], dtype=int)
 
     samples_p_on = num_spikes * neuron_params["tau_refrac"]\
-            / calib_data["duration"]
+            / calib_cfg["duration"]
 
     return samples_v_rest, samples_p_on
 
 
-def _client_calibration_gather_data(self, address):
+def _client_calibration_gather_data(address):
     """
         This function is meant to be run by the spawned calibration process.
     """
     socket = context.socket(zmq.REP)
     socket.connect(address)
 
-    cfg_data = socket.get_json()
+    cfg_data = socket.recv_json()
 
-    samples_v_rest, samples_p_on = standalone_calibration(**cfg_data)
+    samples_v_rest, samples_p_on =\
+            standalone_gather_calibration_data(**cfg_data)
 
     comm.send_array(socket, samples_v_rest, flags=zmq.SNDMORE)
     comm.send_array(socket, samples_p_on, flags=0)

@@ -4,6 +4,8 @@
 import numpy as np
 from scipy.special import erf
 
+from .logcfg import log
+
 
 def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
         e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm,
@@ -33,21 +35,28 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     tau_eff = cm / g_tot
     v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + v_rest * g_l) / g_tot
 
+    log.info("tau_eff: {}".format(tau_eff))
+
     ####### calculate variance of membrane potential #######
 
     tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
     tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
+
     S_exc = weights_exc * (e_rev_E - v_eff) * tau_g_exc / tau_eff / g_tot
     S_inh = weights_inh * (e_rev_I - v_eff) * tau_g_inh / tau_eff / g_tot
 
-    var = np.dot(rates_exc, S_exc**2)\
-              * (tau_g_exc/2. + tau_eff/2.\
-                  - 2. * tau_eff * tau_g_exc / (tau_eff + tau_g_exc))\
-          + np.dot(rates_inh, S_inh**2)\
-              * (tau_g_inh/2. + tau_eff/2.\
-                  - 2. * tau_eff * tau_g_inh / (tau_eff + tau_g_inh))
+    var_tau_e = tau_syn_E/2. + tau_eff/2.\
+            - 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E)
 
-    return v_eff, p.sqrt(var), g_tot
+    var_tau_i = tau_syn_I/2. + tau_eff/2.\
+            - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I)
+
+    # log.info("v_tau_e/v_tau_i: {} / {}".format(v_tau_e, v_tau_i))
+
+    var = np.dot(rates_exc, S_exc**2) * var_tau_e\
+        + np.dot(rates_inh, S_inh**2) * var_tau_i
+
+    return v_eff, np.sqrt(var), g_tot
 
 
 def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
@@ -76,12 +85,15 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     tau_eff = cm / g_tot
     v_eff = (I_exc + I_inh) / g_l + v_rest
 
+    log.info("tau_eff: {}".format(tau_eff))
+
     # calculate variance of membrane potential
 
     tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
     tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
-    S_exc = weights_exc * taug_exc / tau_eff / g_tot
-    S_inh = weights_inh * taug_inh / tau_eff / g_tot
+
+    S_exc = weights_exc * tau_g_exc / tau_eff / g_tot
+    S_inh = weights_inh * tau_g_inh / tau_eff / g_tot
 
     var = np.dot(rates_exc, S_exc**2)\
             * (tau_syn_E/2. + tau_eff/2.\
@@ -106,7 +118,7 @@ def gauss(x, mean, sigma):
 
 
 def erfm(x, mean, sigma):
-    return .5*(1.+erf((x-mean)/p.sqrt(2.)/sigma))
+    return .5*(1.+erf((x-mean)/np.sqrt(2.)/sigma))
 
 
 def get_all_source_parameters(db_sources):
@@ -116,7 +128,7 @@ def get_all_source_parameters(db_sources):
     """
 
     num_sources = len(db_sources)
-    num_sources_exc = len(filter(lambda x: x.is_exc), db_sources)
+    num_sources_exc = len(filter(lambda x: x.is_exc, db_sources))
     num_sources_inh = num_sources - num_sources_exc
 
     rates_exc = np.empty((num_sources_exc,))

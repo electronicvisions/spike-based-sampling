@@ -7,6 +7,7 @@
 
 from .logcfg import log
 from . import utils
+from . import meta
 
 import peewee as pw
 import numpy as np
@@ -15,11 +16,6 @@ import datetime
 
 # database for parameters
 database = pw.SqliteDatabase(None)
-
-# storage for calibration data (subgroup '/calibration')
-# subgroups are the primary keys for the calibration-rows in the database
-# then they have two datasets: v_rest and p_on
-data_storage = None
 
 # classes for datastorage
 
@@ -32,14 +28,49 @@ def setup_database(basename="database"):
     database.init(db_name)
 
     log.info("Setting up storage for datasets: {}".format(ds_name))
-    global data_storage
-    data_storage = h5py.File(ds_name, "a")
+    meta.data_storage = h5py.File(ds_name, "a")
 
     for model in [NeuronParameters, Calibration, SourceCFG,
             SourceCFGInCalibration]:
         if not model.table_exists():
             log.info("Creating table: {}".format(model.__name__))
             model.create_table()
+
+
+def filter_incomplete_calibrations(query):
+    return query.where(
+            (Calibration.alpha >> None)\
+            | (Calibration.alpha_theo >> None) \
+            | (Calibration.v_p05 >> None) \
+            | (Calibration.mean >> None )\
+            | (Calibration.std >> None )\
+            | (Calibration.g_tot >> None)
+        )
+
+
+def purge_incomplete_calibrations():
+    """
+        Calibration objects get written to the database prior to calibrating 
+        because the id needs to be known for the samples to be written to 
+
+        NOTE: Currently this method SHOULD NOT be used in a multi-user
+        environment!
+    """
+
+    dq = filter_incomplete_calibrations(Calibration.delete())
+
+    num_deleted = dq.execute()
+    log.info("Purged {} partial calibration{}..".format(num_deleted,
+        "s" if num_deleted > 1 else ""))
+
+
+def get_incomplete_calibration_ids():
+    """
+        List of ids of incomplete calibrations.
+    """
+    return list(filter_incomplete_calibrations(
+        Calibration.select(Calibration.id)))
+
 
 
 class BaseModel(pw.Model):
@@ -102,7 +133,7 @@ class NeuronParameters(BaseModel):
             )
 
 
-@setup_storage_fields
+@meta.setup_storage_fields
 class Calibration(BaseModel):
     """
         Represents a calibration result.
@@ -114,18 +145,21 @@ class Calibration(BaseModel):
     std_range = pw.DoubleField(default=4.)
 
     used_parameters = pw.ForeignKeyField(NeuronParameters,
-            related_name="calibrations", index=True)
+            related_name="calibrations", index=True, cascade=True)
 
-    # results
-    alpha = pw.DoubleField()
-    alpha_theo = pw.DoubleField() # theoretical estimate
-    v_p05 = pw.DoubleField()
-    mean = pw.DoubleField()
-    std = pw.DoubleField()
-    g_tot = pw.DoubleField()
+    # results (may be null because before calibration only the arguments above
+    # are known)
+    alpha = pw.DoubleField(null=True)
+    alpha_theo = pw.DoubleField(null=True) # theoretical estimate
+    v_p05 = pw.DoubleField(null=True)
+    mean = pw.DoubleField(null=True)
+    std = pw.DoubleField(null=True)
+    g_tot = pw.DoubleField(null=True)
 
     # for book keeping
     date = pw.DateTimeField(default=datetime.datetime.now)
+
+    storage_fields = ["samples_v_rest", "samples_p_on"]
 
     def link_sources(self, sources):
         """
@@ -133,13 +167,20 @@ class Calibration(BaseModel):
         """
         assert(not any((src.get_id() is None for src in sources)))
         # see if there already are any sources linked
-        present_sources = list(SourceCFGs.select(SourceCFGs.id)\
+        present_sources = list(SourceCFG.select(SourceCFG.id)\
                 .join(SourceCFGInCalibration)\
                 .join(Calibration).where(Calibration == self))
 
         for src in filter(lambda x: x not in present_sources, sources):
             SourceCFGInCalibration.create(source=src, calibration=self)
 
+    @property
+    def valid(self):
+        """
+            Calibration is only valid when it has results
+        """
+        return all((getattr(self, k) is not None for k in\
+                ["alpha", "alpha_theo", "v_p05", "mean", "std"]))
 
     class Meta:
         order_by = ("-date",)
@@ -153,7 +194,8 @@ class SourceCFG(BaseModel):
 
 class SourceCFGInCalibration(BaseModel):
     source = pw.ForeignKeyField(SourceCFG, related_name="calibrations")
-    calibration = pw.ForeignKeyField(Calibration, related_name="sources")
+    calibration = pw.ForeignKeyField(Calibration, related_name="sources",
+            cascade=True)
 
 
 def sync_params_to_db(neuron_parameters):
@@ -165,19 +207,19 @@ def sync_params_to_db(neuron_parameters):
               element will be returned.
     """
     try:
-        params = NeuronParameters.get(*(getattr(NeuronParams, k) == v\
-                    for k,v in neuron_parameters.iterkeys()))
+        params = NeuronParameters.get(*(getattr(NeuronParameters, k) == v\
+                    for k,v in neuron_parameters.iteritems()))
         log.info("Parameters found in database, loaded.")
-    except NeuronParams.DoesNotExist:
+    except NeuronParameters.DoesNotExist:
         log.info("Parameters not found in database, creating new entry.")
-        params = NeuronParams.create(**neuron_parameters)
+        params = NeuronParameters.create(**neuron_parameters)
 
     return params
 
 
 def create_source_cfg(rate, weight, is_excitatory=True):
     """
-        Returns a SourceCFGs-object that has been synched to the database with
+        Returns a SourceCFG-object that has been synched to the database with
         the specified rate/weight combination as well as information whether
         the source is excitatory/inhibitory.
     """

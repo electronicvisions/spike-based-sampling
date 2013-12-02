@@ -6,6 +6,11 @@ import pylab as p
 import h5py
 
 from . import utils
+from .logcfg import log
+
+# subgroups are the primary keys for the calibration-rows in the database
+# then they have two datasets: v_rest and p_on
+data_storage = None # set from db
 
 def create_dataset_compressed(h5grp, *args, **kwargs):
     kwargs.setdefault("compression", "gzip")
@@ -16,9 +21,31 @@ def create_dataset_compressed(h5grp, *args, **kwargs):
 
 
 def ensure_group_exists(h5grp, name):
+    log.debug("Looking for {} in {}".format(name, h5grp.name))
     if name not in h5grp:
         h5grp.create_group(name)
     return h5grp[name]
+
+
+def generate_setter(field):
+    def setter(self, array):
+        h5grp = self.get_storage_group()
+        if field in h5grp:
+            del h5grp[field]
+        create_dataset_compressed(h5grp, name=field, data=array)
+
+    return setter
+
+
+def generate_getter(field):
+    def getter(self):
+        h5grp = self.get_storage_group()
+        if field in h5grp:
+            return h5grp[field]
+        else:
+            return None
+
+    return getter
 
 
 def setup_storage_fields(model):
@@ -40,25 +67,13 @@ def setup_storage_fields(model):
     def get_storage_group(self):
         assert self.get_id() is not None, "Model was not saved in database!"
         return ensure_group_exists(ensure_group_exists(data_storage,
-            self.__class__.__name__), self.get_id())
+            self.__class__.__name__), str(self.get_id()))
 
     setattr(model, "get_storage_group", get_storage_group)
 
     for field in storage_fields:
-        def setter(self, array):
-            h5grp = self.get_storage_group()
-            if field in h5grp:
-                del h5grp[field]
-
-            create_dataset_compressed(h5grp, name=field, data=array)
-
-        def getter(self):
-            h5grp = self.get_storage_group()
-            if field in h5grp:
-                return h5grp[field]
-            else:
-                return None
-
+        setter = generate_setter(field)
+        getter = generate_getter(field)
         setattr(model, field, property(getter, setter))
 
     return model
