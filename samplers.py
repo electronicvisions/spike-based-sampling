@@ -4,6 +4,7 @@
 from .logcfg import log
 from . import utils
 from . import db
+from . import meta
 
 import itertools as it
 
@@ -47,7 +48,7 @@ class LIFsampler(object):
             raise Exception("Please specify both model and parameters or "
                             "neither.")
 
-        self.bias = 0.
+        self.bias_theo = 0.
 
         # the loaded calibration object from the database
         # which will be used for adjusting neuron parameters
@@ -58,6 +59,42 @@ class LIFsampler(object):
         self.db_sources = None
 
         self.population = None
+
+
+    # implement bias_bio and bias_theo as properties so
+    # the user can assign either and query the other automatically
+    # (once the sampler is calibrated)
+    @property
+    def bias_theo(self):
+        if not self.bias_is_theo:
+            # if the bias is in bio units we need calibration to give the bio
+            # equivalent
+            assert(self.is_calibrated)
+            return self._bias / self.db_calibration.alpha
+        else:
+            return self._bias
+
+    @property
+    def bias_bio(self):
+        if self.bias_is_theo:
+            # if the bias is theo we need calibration to give the bio equivalent
+            assert(self.is_calibrated)
+            return self._bias * self.db_calibration.alpha
+        else:
+            return self._bias
+
+
+    @bias_theo.setter
+    def bias_theo(self, bias):
+        self._bias = bias
+        self.bias_is_theo = True
+
+
+    @bias_bio.setter
+    def bias_bio(self, bias):
+        self._bias = bias
+        self.bias_is_theo = False
+
 
     @property
     def mean(self):
@@ -79,10 +116,6 @@ class LIFsampler(object):
             pynn_neuronmodel = self.pynn_model
         if pynn_neuronmodel not in self.supported_pynn_neuronmodels:
             raise Exception("Neuron model not supported!")
-
-
-    def set_bias(self, bias):
-        self.bias = bias
 
 
     @property
@@ -173,7 +206,7 @@ class LIFsampler(object):
 
     def get_v_rest_from_bias(self):
         assert(self.is_calibrated)
-        return self.calibration.v_p05 + self.calibration.alpha * self.bias
+        return self.calibration.v_p05 + self.bias_bio
 
 
     @property
@@ -201,15 +234,6 @@ class LIFsampler(object):
     @property
     def sources_configured(self):
         return self.db_sources is not None
-
-
-    def _save_sources(self):
-        """
-            Save sources if they are not in the database yet.
-        """
-        assert(self.sources_configured)
-        for src in self.db_sources:
-            src.save()
 
 
     def forget_calibration(self):
@@ -257,8 +281,6 @@ class LIFsampler(object):
     def calibrate(self, duration=10000., num_samples=1000, std_range=4.):
         """
             Calibrate the sampler, using the specified source parameters.
-
-            Both excitatory/inhibitory weights/rates are expected to be lists!
         """
         assert self.sources_configured, "Please use `set_source_cfg` prior to "\
                 "calibrating."
@@ -266,15 +288,28 @@ class LIFsampler(object):
         self.db_calibration = db.Calibration(duration=duration,
                 num_samples=num_samples, std_range=std_range)
 
+        # sync to db because the gathering function writes to it
+        self.db_calibration.save()
+
         self._calc_distribution()
+        self._estimate_alpha()
 
         # by importing here we avoid importing networking stuff until we have to
-        from .calibration import calibrate_sampler
-        calibrate_sampler(
+        from .gather_calibration_data import gather_calibration_data
+        gather_calibration_data(
                 db_neuron_params=self.db_params,
                 db_partial_calibration=self.db_calibration,
                 db_sources=self.db_sources,
                 sim_name=self.sim_name)
+
+        self.db_calibration.v_p05, self.db_calibration.alpha = fit.fit_sigmoid(
+            np.array(self.db_calibration.samples_v_rest),
+            np.array(self.db_calibration.samples_p_on),
+            guess_p05=self.db_params.v_thresh,
+            guess_alpha=self.db_calibration.alpha_theo)
+
+        self.db_calibration.save()
+        self.db_calibration.link_sources(self.db_sources)
 
 
     def get_all_source_parameters(self):
@@ -285,6 +320,7 @@ class LIFsampler(object):
         assert(self.sources_configured)
 
         return utils.get_all_source_parameters(self.db_sources)
+
 
     def _calc_distribution(self):
         dbc = self.db_calibration
@@ -297,3 +333,10 @@ class LIFsampler(object):
         kwargs["gl"] = self.db_params.gl
 
         dbc.mean, dbc.std, dbc.g_tot = dist(*args, **kwargs)
+
+
+    def _estimate_alpha(self):
+        dbc = self.db_calibration
+        # estimate for syn weight factor from theo to LIF
+        dbc.alpha_theo = .25 * np.sqrt(2. * np.pi) * dbc.std
+

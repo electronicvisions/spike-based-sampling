@@ -2,8 +2,7 @@
 # encoding: utf-8
 
 """
-    The whole calibration done in async fashion.
-
+    Gather calibration data in another process.
 """
 
 # NOTE: No relative imports here because the file will also be executed as
@@ -20,7 +19,7 @@ import sys
 
 context = zmq.Context()
 
-def calibrate_sampler(db_neuron_params, db_partial_calibration, db_sources,
+def gather_calibration_data(db_neuron_params, db_partial_calibration, db_sources,
         sim_name="pyNN.nest"):
     """
         db_neuron_params:
@@ -51,7 +50,7 @@ def calibrate_sampler(db_neuron_params, db_partial_calibration, db_sources,
     cfg_data = {
             "sim_name" : sim_name,
             "calib_cfg" : {k: getattr(dbpc, k) for k in\
-                    ["duration", "num_samples", "std_range", "mean", "std"]},
+                ["duration", "num_samples", "std_range", "mean", "std"]},
             "neuron_model" : db_neuron_params.pynn_model,
             "neuron_params" : db_neuron_params.get_pynn_parameters(),
             "sources_cfg" : [{"rate": src.rate, "weight": src.weight,
@@ -63,12 +62,19 @@ def calibrate_sampler(db_neuron_params, db_partial_calibration, db_sources,
     dbpc.samples_v_rest = comm.recv_array(socket)
     dbpc.samples_p_on = comm.recv_array(socket)
 
+    proc.wait()
 
-def standalone_calibration(sim_name, calib_cfg, neuron_model, neuron_params,
-        sources_cfg):
+
+def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
+        neuron_params, sources_cfg):
     """
         This function performs a single calibration run and should normally run
         in a seperate subprocess (which it is when called from LIFsampler).
+
+        It does not fit the sigmoid.
+
+        calib_cfg: (dict with keys) duration, num_samples, mean, std, std_range
+        sources_cfg: (list of dicts with keys) rate, weight, is_exc
     """
     log.info("Calibration started.")
     log.info("Preparing network.")
@@ -81,8 +87,22 @@ def standalone_calibration(sim_name, calib_cfg, neuron_model, neuron_params,
 
     samples_v_rest = np.linspace(mean-spread, mean+spead, num)
 
+    rates = np.array([src_cfg["rate"] for src_cfg in sources_cfg])
+
     # TODO maybe implement a seed here
     sim.setup()
+
+    # create sources
+    if hasattr(sim, "nest"):
+        source_t = sim.native_cell_type("poisson_generator")
+    else:
+        source_t = sim.SpikePoissonGenerator
+
+    sources = sim.Population(len(rates), source_t(
+        duration=calib_cfg["duration"], start=0.))
+
+    for src, rate in it.izip(sources, rates):
+        src.set(rate=rate)
 
     samplers = sim.Population(num, getattr(sim, neuron_model)(**neuron_params))
     samplers.record("spikes")
@@ -90,20 +110,32 @@ def standalone_calibration(sim_name, calib_cfg, neuron_model, neuron_params,
     for sampler, v_rest in it.izip(samplers, samples_v_rest):
         sampler.set(v_rest=v_rest)
 
+    # connect the two
+    num_connections = len(samplers) * len(sources)
+    projections = []
+
+    for i, src_cfg in enumerate(sources_cfg):
+        src = sources[i, i:+1] # get a population view because only those can
+                               # be connected
+        projections.append(sim.Projection(src, samplers,
+            sim.AllToAllConnector(),
+            synapse_type=sim.StaticSynapse(weight=src_cfg.weight),
+            receptor_type=["inhibitory", "excitatory"][src_cfg.is_exc]))
+
     log.info("Running simulation..")
     sim.run(calib_cfg["duration"])
 
     log.info("Reading spikes.")
-    spikes = samplers.get_data("spikes")
-    spikes = np.array([len(s) for s in spikes.segments[0].spiketrains],
-            dtype=int)
+    spiketrains = samplers.get_data("spikes").segments[0].spiketrains
+    num_spikes = np.array([len(s) for s in spiketrains], dtype=int)
 
-    samples_p_on = spikes * neuron_params["tau_refrac"] / calib_data["duration"]
+    samples_p_on = num_spikes * neuron_params["tau_refrac"]\
+            / calib_data["duration"]
 
     return samples_v_rest, samples_p_on
 
 
-def _client_calibration(self, address):
+def _client_calibration_gather_data(self, address):
     """
         This function is meant to be run by the spawned calibration process.
     """
@@ -117,5 +149,7 @@ def _client_calibration(self, address):
     comm.send_array(socket, samples_v_rest, flags=zmq.SNDMORE)
     comm.send_array(socket, samples_p_on, flags=0)
 
+
 if __name__ == "__main__":
-    _client_calibration(sys.argv[1])
+    _client_calibration_gather_data(sys.argv[1])
+

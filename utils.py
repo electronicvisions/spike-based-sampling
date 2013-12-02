@@ -97,6 +97,10 @@ def sigmoid(x):
     return 1./(1.+np.exp(-x))
 
 
+def sigmoid_norm(x, x_p05, alpha):
+    return 1./(1. + np.exp( -(x-x_p05)/alpha))
+
+
 def gauss(x, mean, sigma):
     return 1./np.sqrt(2.*np.pi)/sigma*np.exp(-(x-mean)**2/2./sigma**2)
 
