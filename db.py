@@ -177,8 +177,8 @@ class Calibration(BaseModel):
         # delete any sources previously linked to this node
         # node we do allow sources to be specified again
 
-        dq = SourceCFGInCalibration.delete().join(Calibration)\
-                .where(Calibration==self)
+        dq = SourceCFGInCalibration.delete().where(
+                SourceCFGInCalibration.calibration==self)
 
         num_deleted = dq.execute()
 
@@ -186,14 +186,6 @@ class Calibration(BaseModel):
 
         for src in sources:
             SourceCFGInCalibration.create(source=src, calibration=self)
-
-    @property
-    def valid(self):
-        """
-            Calibration is only valid when it has results
-        """
-        return all((getattr(self, k) is not None for k in\
-                ["alpha", "alpha_theo", "v_p05", "mean", "std"]))
 
     class Meta:
         order_by = ("-date",)
