@@ -7,6 +7,7 @@
 
 import sys
 import os.path as osp
+import functools as ft
 
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 
@@ -54,8 +55,15 @@ def gather_calibration_data(db_neuron_params, db_partial_calibration, db_sources
     # prepare data to send
     cfg_data = {
             "sim_name" : sim_name,
-            "calib_cfg" : {k: getattr(dbpc, k) for k in\
-                ["duration", "num_samples", "std_range", "mean", "std"]},
+            "calib_cfg" : {k: getattr(dbpc, k) for k in [
+                "duration",
+                "num_samples",
+                "std_range",
+                "mean",
+                "std",
+                "burn_in_time",
+                "dt",
+            ]},
             "neuron_model" : db_neuron_params.pynn_model,
             "neuron_params" : db_neuron_params.get_pynn_parameters(),
             "sources_cfg" : [{"rate": src.rate, "weight": src.weight,
@@ -90,12 +98,15 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
 
     num = calib_cfg["num_samples"]
 
+    burn_in_time = calib_cfg["burn_in_time"]
+    duration = calib_cfg["duration"]
+
     samples_v_rest = np.linspace(mean-spread, mean+spread, num)
 
     rates = np.array([src_cfg["rate"] for src_cfg in sources_cfg])
 
     # TODO maybe implement a seed here
-    sim.setup()
+    sim.setup(time_step=calib_cfg["dt"])
 
     # create sources
     if hasattr(sim, "nest"):
@@ -109,15 +120,13 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
     for src, rate in it.izip(sources, rates):
         src.rate = rate
 
+    log.info("Setting up {} samplers.".format(num))
     samplers = sim.Population(num, getattr(sim, neuron_model)(**neuron_params))
     samplers.record("spikes")
-    samplers.initialize(v=neuron_params["v_rest"])
-
-    for sampler, v_rest in it.izip(samplers, samples_v_rest):
-        samplerv_rest = v_rest
+    samplers.initialize(v=samples_v_rest)
+    samplers.set(v_rest=samples_v_rest)
 
     # connect the two
-    num_connections = len(samplers) * len(sources)
     projections = []
 
     for i, src_cfg in enumerate(sources_cfg):
@@ -128,17 +137,31 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
             synapse_type=sim.StaticSynapse(weight=src_cfg["weight"]),
             receptor_type=["inhibitory", "excitatory"][src_cfg["is_exc"]]))
 
-    log.info("Running simulation..")
-    sim.run(calib_cfg["duration"])
+    steps = 10
+    increment = duration / steps
+
+    # bring samplers into high conductance state
+    log.info("Burning in samplers for {} ms".format(burn_in_time))
+    sim.run(burn_in_time)
+    log.info("Generating calibration data..")
+    sim.run(duration,
+            callbacks=[ft.partial(log_time,
+                increment=increment, duration=calib_cfg["duration"],
+                offset=burn_in_time)])
 
     log.info("Reading spikes.")
     spiketrains = samplers.get_data("spikes").segments[0].spiketrains
-    num_spikes = np.array([len(s) for s in spiketrains], dtype=int)
+    num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
+            dtype=int)
 
-    samples_p_on = num_spikes * neuron_params["tau_refrac"]\
-            / calib_cfg["duration"]
+    samples_p_on = num_spikes * neuron_params["tau_refrac"] / duration
 
     return samples_v_rest, samples_p_on
+
+
+def log_time(time, increment, duration, offset):
+    log.info("{} ms / {} ms".format(time-offset, duration))
+    return time + increment
 
 
 def _client_calibration_gather_data(address):

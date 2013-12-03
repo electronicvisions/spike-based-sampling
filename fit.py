@@ -9,7 +9,7 @@ def fit_sigmoid(x, y, guess_p05, guess_alpha):
     """
         Fits the sigmoid to the x/y data samples.
     """
-    opt_vars, cov_vars = so.curve_fit(utils.sigmoid_norm, x, y,
+    opt_vars, cov_vars = so.curve_fit(utils.sigmoid_trans, x, y,
             p0=[guess_p05, guess_alpha])
 
     x_p05, alpha = opt_vars

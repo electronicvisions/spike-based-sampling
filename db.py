@@ -143,6 +143,12 @@ class Calibration(BaseModel):
     duration = pw.DoubleField(default=10000.)
     num_samples = pw.IntegerField(default=1000)
     std_range = pw.DoubleField(default=4.)
+    burn_in_time = pw.DoubleField(default=100.)
+    dt = pw.DoubleField(default=0.01)
+
+    # We do not check if simulators match when loading (because it should not
+    # matter). It is only kept as information.
+    simulator = pw.CharField(default="pynn.nest", max_length=48)
 
     used_parameters = pw.ForeignKeyField(NeuronParameters,
             related_name="calibrations", index=True, cascade=True)
@@ -164,14 +170,21 @@ class Calibration(BaseModel):
     def link_sources(self, sources):
         """
             Note: SourceCFGs have to be present in the database already!
+                  Also, they have to be all linked at the same time (but do not
+                  have to be unique).
         """
         assert(not any((src.get_id() is None for src in sources)))
-        # see if there already are any sources linked
-        present_sources = list(SourceCFG.select(SourceCFG.id)\
-                .join(SourceCFGInCalibration)\
-                .join(Calibration).where(Calibration == self))
+        # delete any sources previously linked to this node
+        # node we do allow sources to be specified again
 
-        for src in filter(lambda x: x not in present_sources, sources):
+        dq = SourceCFGInCalibration.delete().join(Calibration)\
+                .where(Calibration==self)
+
+        num_deleted = dq.execute()
+
+        log.debug("Deleted {} previoiusly linked sources.".format(num_deleted))
+
+        for src in sources:
             SourceCFGInCalibration.create(source=src, calibration=self)
 
     @property
@@ -193,7 +206,8 @@ class SourceCFG(BaseModel):
 
 
 class SourceCFGInCalibration(BaseModel):
-    source = pw.ForeignKeyField(SourceCFG, related_name="calibrations")
+    source = pw.ForeignKeyField(SourceCFG, related_name="calibrations",
+            cascade=True)
     calibration = pw.ForeignKeyField(Calibration, related_name="sources",
             cascade=True)
 
@@ -227,9 +241,9 @@ def create_source_cfg(rate, weight, is_excitatory=True):
         src_cfg = SourceCFG.get(SourceCFG.rate == rate,
                 SourceCFG.weight == weight,
                 SourceCFG.is_exc == is_excitatory )
-        log.info("SourceCFG configuration loaded from database.")
+        log.info("Source configuration loaded from database.")
     except SourceCFG.DoesNotExist:
-        log.info("SourceCFG configuration not present in database, creating..")
+        log.info("Source configuration not present in database, creating..")
         src_cfg = SourceCFG.create(rate=rate, weight=weight,
                 is_exc=is_excitatory)
 

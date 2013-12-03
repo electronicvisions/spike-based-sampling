@@ -79,7 +79,7 @@ def setup_storage_fields(model):
     return model
 
 
-def plot_function(orig):
+def plot_function(plotname):
     """
         Wraps a function so that it creates a figure and axes when it is not
         supplied with the kwargs fig/ax.
@@ -87,27 +87,49 @@ def plot_function(orig):
         Note that fig/ax have to kwargs and not regular args.
 
         If no figure was supplied, the figure will be shown.
+        If `save` was supplied, the figure will be saved instead as `plotname`
+        instead.
     """
-    def wrapped(*args, **kwargs):
-        show = kwargs.get("show", True)
+    def decorator(orig):
+        def wrapped(*args, **kwargs):
+            show = kwargs.get("show", True)
+            save = False
 
-        if "show" in kwargs:
-            del kwargs["show"]
-        if kwargs.get("fig", None) is None:
-            kwargs["fig"] = p.figure()
-        else:
-            # don't show when user supplies a figure
-            show = False
+            if "show" in kwargs:
+                del kwargs["show"]
+            if kwargs.get("fig", None) is None:
+                kwargs["fig"] = p.figure()
+            else:
+                # don't show when user supplies a figure
+                show = False
 
-        if kwargs.get("ax", None) is None:
-            kwargs["ax"] = kwargs["fig"].add_subplot(111)
+            if kwargs.get("save", False):
+                show = False
+                save = True
+            if "save" in kwargs:
+                del kwargs["save"]
 
-        returnval = orig(*args, **kwargs)
+            if "plotname" in kwargs:
+                local_plotname = kwargs["plotname"]
+                del kwargs["plotname"]
+            else:
+                local_plotname = plotname
 
-        if show:
-            kwargs["fig"].show()
+            if kwargs.get("ax", None) is None:
+                kwargs["ax"] = kwargs["fig"].add_subplot(111)
 
-        return returnval
+            log.info("Plotting {}..".format(local_plotname))
 
-    return wrapped
+            returnval = orig(*args, **kwargs)
+
+            if show:
+                kwargs["fig"].show()
+            if save:
+                kwargs["fig"].savefig(local_plotname)
+
+            return returnval
+
+        return wrapped
+
+    return decorator
 

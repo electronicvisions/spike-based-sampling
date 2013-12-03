@@ -111,7 +111,7 @@ class LIFsampler(object):
         return self.db_calibration.g_tot
 
     @property
-    def alpha(self):
+    def alpha_fitted(self):
         assert(self.is_calibrated)
         return self.db_calibration.alpha
 
@@ -209,12 +209,6 @@ class LIFsampler(object):
         log.info("Calibration loaded.")
         return True
 
-    def _load_sources(self):
-        assert(self.is_calibrated)
-        self.db_sources = list(db.SourceCFG.select()\
-                .join(db.SourceCFGInCalibration).join(db.Calibration)\
-                .where(db.Calibration.id == self.db_calibration).naive())
-
     def create(self, population=None, create_pynn_sources=True):
         """
             Actually configures the supplied pyNN-object `popluation`
@@ -279,16 +273,16 @@ class LIFsampler(object):
     def get_source_weights(self, is_exc=True):
         return [src.weight for src in self.get_source_cfg(is_exc)]
 
-    def calibrate(self, duration=10000., num_samples=1000, std_range=4.):
+    def calibrate(self, **calibration_params):
         """
             Calibrate the sampler, using the specified source parameters.
         """
         assert self.sources_configured, "Please use `set_source_cfg` prior to "\
                 "calibrating."
 
-        self.db_calibration = db.Calibration(duration=duration,
-                num_samples=num_samples, std_range=std_range,
-                used_parameters=self.db_params)
+        calibration_params["simulator"] = self.sim_name
+        calibration_params["used_parameters"] = self.db_params
+        self.db_calibration = db.Calibration(**calibration_params)
 
         # sync to db because the gathering function writes to it
 
@@ -305,13 +299,17 @@ class LIFsampler(object):
                 db_sources=self.db_sources,
                 sim_name=self.sim_name)
 
+        log.info("Calibration data gathered, performing fit.")
         self.db_calibration.v_p05, self.db_calibration.alpha = fit.fit_sigmoid(
             np.array(self.db_calibration.samples_v_rest),
             np.array(self.db_calibration.samples_p_on),
             guess_p05=self.db_params.v_thresh,
             guess_alpha=self.db_calibration.alpha_theo)
-
         self.db_calibration.save()
+
+        log.info("Fitted alpha: {:.3f}".format(self.alpha_fitted))
+        log.info("Fitted v_p05: {:.3f} mV".format(self.v_p05))
+
         self.db_calibration.link_sources(self.db_sources)
 
     def get_all_source_parameters(self):
@@ -322,6 +320,10 @@ class LIFsampler(object):
         assert(self.sources_configured)
 
         return utils.get_all_source_parameters(self.db_sources)
+
+    ###########################
+    # INTERNALLY USED METHODS #
+    ###########################
 
     def _calc_distribution(self):
         dbc = self.db_calibration
@@ -335,10 +337,59 @@ class LIFsampler(object):
 
         dbc.mean, dbc.std, dbc.g_tot = dist(*args, **kwargs)
 
-        log.info("Membrane distribution: {} +- {}".format(dbc.mean, dbc.std))
+        log.info(u"Membrane distribution: {:.3f} ± {:.3f} mV".format(
+            dbc.mean, dbc.std))
 
     def _estimate_alpha(self):
         dbc = self.db_calibration
         # estimate for syn weight factor from theo to LIF
         dbc.alpha_theo = .25 * np.sqrt(2. * np.pi) * dbc.std
+
+    def _load_sources(self):
+        assert(self.is_calibrated)
+        self.db_sources = list(db.SourceCFG.select()\
+                .join(db.SourceCFGInCalibration).join(db.Calibration)\
+                .where(db.Calibration.id == self.db_calibration).naive())
+
+
+    ##################
+    # PLOT FUNCTIONS #
+    ##################
+
+    @meta.plot_function("calibration")
+    def plot_calibration(self, fig, ax, plot_v_dist=False):
+        assert self.is_calibrated
+
+        samples_v_rest = np.array(self.db_calibration.samples_v_rest)
+        samples_p_on = np.array(self.db_calibration.samples_p_on)
+
+        v_thresh = self.db_params.v_thresh
+        std = self.db_calibration.std
+        v_p05 = self.db_calibration.v_p05
+
+        xdata = np.linspace(v_thresh-4.*std, v_thresh+4.*std, 500)
+
+        if plot_v_dist:
+            estim_dist_v_thresh = utils.gauss(xdata, v_thresh, std)
+        estim_cdf_v_thresh = utils.erfm(xdata, v_thresh, std)
+        estim_sigmoid = utils.sigmoid_trans(xdata, v_thresh, self.alpha_theo)
+
+        fitted_p_on = utils.sigmoid_trans(samples_v_rest, v_p05,
+                self.alpha_fitted)
+
+        if plot_v_dist:
+            ax.plot(xdata, estim_dist_v_thresh,
+                    label="est. $V_{mem}$ distribution @ $\mu = v_{thresh}$")
+        ax.plot(xdata, estim_cdf_v_thresh,
+                label="est. CDF of $V_{mem}$ @ $\mu =v_{thresh}$")
+        ax.plot(xdata, estim_sigmoid,
+                label="est. tf'd sigmoid assuming $p(V > V_{thresh} = p_{ON})$")
+        ax.plot(samples_v_rest, fitted_p_on, label="fitted $p_{ON}$")
+        ax.plot(samples_v_rest, samples_p_on, marker="x", ls="", c="b",
+                label="measured $p_{ON}$")
+
+        ax.set_xlabel("$V_{rest}$")
+        ax.set_ylabel("$p_{ON}$")
+
+        ax.legend(loc="upper left")
 

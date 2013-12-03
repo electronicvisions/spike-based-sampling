@@ -35,7 +35,7 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     tau_eff = cm / g_tot
     v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + v_rest * g_l) / g_tot
 
-    log.info("tau_eff: {}".format(tau_eff))
+    log.info("tau_eff: {:.3f} ms".format(tau_eff))
 
     ####### calculate variance of membrane potential #######
 
@@ -85,7 +85,7 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     tau_eff = cm / g_tot
     v_eff = (I_exc + I_inh) / g_l + v_rest
 
-    log.info("tau_eff: {}".format(tau_eff))
+    log.info("tau_eff: {:.3f}".format(tau_eff))
 
     # calculate variance of membrane potential
 
@@ -109,16 +109,16 @@ def sigmoid(x):
     return 1./(1.+np.exp(-x))
 
 
-def sigmoid_norm(x, x_p05, alpha):
+def sigmoid_trans(x, x_p05, alpha):
     return 1./(1. + np.exp( -(x-x_p05)/alpha))
 
 
 def gauss(x, mean, sigma):
-    return 1./np.sqrt(2.*np.pi)/sigma*np.exp(-(x-mean)**2/2./sigma**2)
+    return 1./np.sqrt(2.*np.pi)/np.abs(sigma)*np.exp(-(x-mean)**2/2./sigma**2)
 
 
 def erfm(x, mean, sigma):
-    return .5*(1.+erf((x-mean)/np.sqrt(2.)/sigma))
+    return .5*(1.+erf((x-mean)/np.sqrt(2.)/np.abs(sigma)))
 
 
 def get_all_source_parameters(db_sources):
@@ -151,4 +151,5 @@ def get_all_source_parameters(db_sources):
             i_inh += 1
 
     return rates_exc, rates_inh, weights_exc, weights_inh
+
 
