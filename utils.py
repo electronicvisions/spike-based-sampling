@@ -152,4 +152,18 @@ def get_all_source_parameters(db_sources):
 
     return rates_exc, rates_inh, weights_exc, weights_inh
 
+def fill_diagonal(array, value=0):
+    """
+        Fill the diagonal of `array` with `value`.
+    """
+    # ensure quadratic form
+    for s in array.shape:
+        assert s == array.shape[0]
+
+    index = np.arange(array.shape[0], dtype=int)
+
+    indices = [index for s in array.shape]
+
+    array[indices] = value
+
 

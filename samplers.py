@@ -15,7 +15,7 @@ class LIFsampler(object):
     supported_pynn_neuron_models = ["IF_curr_exp", "IF_cond_exp"]
 
     def __init__(self, sim_name="pyNN.nest",
-            pynn_neuron_model=None, neuron_parameters=None, id=None):
+            neuron_model=None, neuron_parameters=None, id=None):
         """
             `sim_name`: Name of the used simulator.
 
@@ -23,19 +23,19 @@ class LIFsampler(object):
 
             `neuron_parameters`: Parameters to pyNN model.
 
-            Alternatively: If both `pynn_neuron_model` and `neuron_parameters`
+            Alternatively: If both `neuron_model` and `neuron_parameters`
                 are None, the stored parameters of `id` are loaded.
         """
         log.info("Setting up sampler.")
         self.sim_name = sim_name
 
-        if pynn_neuron_model is not None and neuron_parameters is not None:
-            self._ensure_model_is_supported(pynn_neuron_model)
+        if neuron_model is not None and neuron_parameters is not None:
+            self._ensure_model_is_supported(neuron_model)
             log.info("Checking parameters in database..")
-            neuron_parameters["pynn_model"] = pynn_neuron_model
+            neuron_parameters["pynn_model"] = neuron_model
             self.db_params = db.sync_params_to_db(neuron_parameters)
 
-        elif pynn_neuron_model is None and neuron_parameters is None:
+        elif neuron_model is None and neuron_parameters is None:
             log.info("Getting parameters with index {}".format(index))
             query = db.NeuronParameters.select()
 
@@ -387,6 +387,9 @@ class LIFsampler(object):
         ax.plot(samples_v_rest, fitted_p_on, label="fitted $p_{ON}$")
         ax.plot(samples_v_rest, samples_p_on, marker="x", ls="", c="b",
                 label="measured $p_{ON}$")
+
+        ax.axvline(v_thresh, ls="--", label="$v_{thresh}$", c="r")
+        ax.axvline(v_p05, ls="--", label="$v_{p=0.5}$", c="b")
 
         ax.set_xlabel("$V_{rest}$")
         ax.set_ylabel("$p_{ON}$")

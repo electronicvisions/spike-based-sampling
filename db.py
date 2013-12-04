@@ -191,10 +191,18 @@ class Calibration(BaseModel):
         order_by = ("-date",)
 
 
+@meta.setup_storage_fields
 class SourceCFG(BaseModel):
-    rate = pw.DoubleField()
+    # if rate is None we have spike times specified in the storage!
+    rate = pw.DoubleField(null=True)
     weight = pw.DoubleField()
     is_exc = pw.BooleanField()
+
+    storage_fields = ["spike_times"]
+
+    @property
+    def has_spikes(self):
+        return self.rate is None
 
 
 class SourceCFGInCalibration(BaseModel):
