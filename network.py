@@ -122,12 +122,51 @@ class BoltzmannMachine(object):
             sampler.bias_bio = b
 
     def convert_weights_bio_to_theo(self, weights):
-        weights = utils.diag
+        weights = utils.fill_diagonal(weights, 0.)
         # TODO: Implement me
         return weights
 
     def convert_weights_bio_to_theo(self, weights):
+        weights = utils.fill_diagonal(weights, 0.)
         # TODO: Implement me
         return weights
 
+    def load_single_calibration(self, id):
+        """
+            Load the same calibration for all samplers.
+
+            Returns a list of sampler(-parameter) ids that failed.
+        """
+        failed = []
+        for sampler in self.samplers:
+            if not sampler.load_configuration(id=id):
+                failed.append(samper.db_params.id)
+
+        return failed
+
+    def load_calibration(self, *ids):
+        """
+            Load the specified calibration ids from the samplers.
+
+            For any id not specified, the latest configuration will be loaded.
+
+            Returns a list of sampler(-parameter) ids that failed.
+        """
+        failed = []
+        for i, sampler in enumerate(self.samplers):
+            if i < len(ids):
+                id = ids[i]
+            else:
+                id = None
+            if not sampler.load_configuration(id=id):
+                failed.append(samper.db_params.id)
+
+        return failed
+
+    def create(self, pynn_object=None):
+        """
+            Create the sampling network and return the pynn object.
+        """
+        # TODO: Implement me!
+        return pynn_object
 

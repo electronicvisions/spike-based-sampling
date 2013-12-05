@@ -42,6 +42,7 @@ def gather_calibration_data(db_neuron_params, db_partial_calibration, db_sources
 
     log.info("Preparing calibration..")
     log.debug("Setting up socket..")
+
     socket = context.socket(zmq.REQ)
     socket.bind("ipc://*")
 

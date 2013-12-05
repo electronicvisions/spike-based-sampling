@@ -205,6 +205,18 @@ class SourceCFG(BaseModel):
         return self.rate is None
 
 
+@meta.setup_storage_fields
+class VmemDistribution(BaseModel):
+    # config
+    dt = pw.DoubleField(default=0.1)
+
+    # results
+    mean = pw.DoubleField(null=True)
+    std = pw.DoubleField(null=True)
+
+    storage_fields = ["voltage_trace"]
+
+
 class SourceCFGInCalibration(BaseModel):
     source = pw.ForeignKeyField(SourceCFG, related_name="calibrations",
             cascade=True)

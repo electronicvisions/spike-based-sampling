@@ -4,6 +4,7 @@
 import numpy as np
 import pylab as p
 import h5py
+import functools as ft
 
 from . import utils
 from .logcfg import log
@@ -132,4 +133,18 @@ def plot_function(plotname):
         return wrapped
 
     return decorator
+
+
+def log_exception(f):
+    @ft.wraps(f)
+    def wrapped(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception, e:
+            import traceback as tb, sys
+            log.error(tb.format_tb(sys.exc_info()[2])[0])
+            log.error(str(e))
+            raise e
+
+    return wrapped
 
