@@ -3,6 +3,8 @@
 
 import numpy as np
 from scipy.special import erf
+import string
+import hashlib
 
 from .logcfg import log
 
@@ -166,4 +168,14 @@ def fill_diagonal(array, value=0):
 
     array[indices] = value
 
+
+def get_random_string(n=32, letters=string.ascii_letters):
+    return "".join((letters[i] for i in np.random.randint(len(letters),
+        size=n)))
+
+
+def get_sha1(array):
+    sha1 = hashlib.sha1()
+    sha1.update(array)
+    return sha1.hexdigest()
 

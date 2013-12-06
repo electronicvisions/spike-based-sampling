@@ -301,8 +301,8 @@ class LIFsampler(object):
 
         log.info("Calibration data gathered, performing fit.")
         self.db_calibration.v_p05, self.db_calibration.alpha = fit.fit_sigmoid(
-            np.array(self.db_calibration.samples_v_rest),
-            np.array(self.db_calibration.samples_p_on),
+            self.db_calibration.samples_v_rest,
+            self.db_calibration.samples_p_on,
             guess_p05=self.db_params.v_thresh,
             guess_alpha=self.db_calibration.alpha_theo)
         self.db_calibration.save()
@@ -360,8 +360,8 @@ class LIFsampler(object):
     def plot_calibration(self, fig, ax, plot_v_dist=False):
         assert self.is_calibrated
 
-        samples_v_rest = np.array(self.db_calibration.samples_v_rest)
-        samples_p_on = np.array(self.db_calibration.samples_p_on)
+        samples_v_rest = self.db_calibration.samples_v_rest
+        samples_p_on = self.db_calibration.samples_p_on
 
         v_thresh = self.db_params.v_thresh
         std = self.db_calibration.std

@@ -5,6 +5,7 @@ import numpy as np
 import pylab as p
 import h5py
 import functools as ft
+import peewee as pw
 
 from . import utils
 from .logcfg import log
@@ -34,6 +35,7 @@ def generate_setter(field):
         if field in h5grp:
             del h5grp[field]
         create_dataset_compressed(h5grp, name=field, data=array)
+        setattr(self, field + "_sha1", utils.get_sha1(array))
 
     return setter
 
@@ -42,42 +44,44 @@ def generate_getter(field):
     def getter(self):
         h5grp = self.get_storage_group()
         if field in h5grp:
-            return h5grp[field]
+            return np.array(h5grp[field])
         else:
             return None
 
     return getter
 
 
-def setup_storage_fields(model):
+class StorageFields(pw.BaseModel):
     """
-        Decorator to enable storage fields for models.
+        Meta class to enable storage fields for models.
 
         Storage fields are defined by `storage_fields` in the original model.
         They can be set and got but not used in any SQL query as they are not
         present in the dataset.
 
         The model has to be saved to the database for storage fields to work.
+
+        For each storage field, there will be `name`_sha1 char field added so
+        that there is an indication when storage contents change (e.g. this is
+        used to distinguish sources with different spike times).
     """
-    if hasattr(model, "storage_fields"):
-        storage_fields = getattr(model, "storage_fields")
-        delattr(model, "storage_fields")
-    else:
-        storage_fields = []
+    def __new__(cls, name, bases, dcts):
+        storage_fields = dcts.get("_storage_fields", tuple())
 
-    def get_storage_group(self):
-        assert self.get_id() is not None, "Model was not saved in database!"
-        return ensure_group_exists(ensure_group_exists(data_storage,
-            self.__class__.__name__), str(self.get_id()))
+        def get_storage_group(self):
+            assert self.get_id() is not None, "Model was not saved in database!"
+            return ensure_group_exists(ensure_group_exists(data_storage,
+                self.__class__.__name__), str(self.get_id()))
 
-    setattr(model, "get_storage_group", get_storage_group)
+        dcts["get_storage_group"] = get_storage_group
 
-    for field in storage_fields:
-        setter = generate_setter(field)
-        getter = generate_getter(field)
-        setattr(model, field, property(getter, setter))
+        for field in storage_fields:
+            setter = generate_setter(field)
+            getter = generate_getter(field)
+            dcts[field] = property(getter, setter)
+            dcts[field + "_sha1"] = pw.CharField(null=True, max_length=40)
 
-    return model
+        return super(StorageFields, cls).__new__(cls, name, bases, dcts)
 
 
 def plot_function(plotname):
@@ -145,6 +149,5 @@ def log_exception(f):
             log.error(tb.format_tb(sys.exc_info()[2])[0])
             log.error(str(e))
             raise e
-
     return wrapped
 
