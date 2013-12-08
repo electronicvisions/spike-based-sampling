@@ -4,6 +4,7 @@
 from .logcfg import log
 
 import functools as ft
+import itertools as it
 import numpy as np
 
 
@@ -41,7 +42,14 @@ def create_sources(sim, sources_cfg, duration):
         for src, src_cfg in it.izip(sources_array, sources_array_cfg):
             src.spike_times = src_cfg["spike_times"]
 
-    return {"poisson": soruces_poisson, "array": sources_array}
+    num_sources = 0
+    if sources_poisson is not None:
+        num_sources += len(sources_poisson)
+    if sources_array is not None:
+        num_sources += len(sources_array)
+    log.info("Created {} sources.".format(num_sources))
+
+    return {"poisson": sources_poisson, "array": sources_array}
 
 
 def connect_sources(sim, sources_cfg, sources, target):
@@ -73,6 +81,9 @@ def connect_sources(sim, sources_cfg, sources, target):
                 sim.AllToAllConnector(),
                 synapse_type=sim.StaticSynapse(weight=src_cfg["weight"]),
                 receptor_type=["inhibitory", "excitatory"][src_cfg["is_exc"]]))
+
+    num_synapses = sum((len(proj) for proj in\
+            projections_poisson+projections_array))
 
     return {"poisson": projections_poisson, "array": projections_array}
 

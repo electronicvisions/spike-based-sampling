@@ -115,6 +115,7 @@ class RunInSubprocess(object):
     """
     def __init__(self, func):
         self._func = func
+        self.__doc__ = getattr(func, "__doc__", "")
 
         self._func_name = func.func_name
         self._func_module = func.__module__
@@ -184,11 +185,17 @@ class RunInSubprocess(object):
         base_module_name = module_name.split(".")[0]
         module_path_split = module_path.split(osp.sep)
 
+        # adjust so osp.join creates an absolute path
+        module_path_split[0] = "/"
+
         # find out where the base_module_folder is residing
         for i_end, folder in enumerate(module_path_split):
             if folder == base_module_name:
                 break
-        return osp.join(*module_path_split[:i_end])
+        func_dir = osp.join(*module_path_split[:i_end])
+        log.debug("func_dir: {}".format(func_dir))
+        return func_dir
+
 
     def _get_transmitter(self, obj):
         if isinstance(obj, np.ndarray):
@@ -291,7 +298,7 @@ class RunInSubprocess(object):
         # always started on the same machine, might change in the future.
 
         log.debug("Setting up script file.")
-        filename = "/dev/shm/sbs_" + utils.get_random_string()
+        filename = "/dev/shm/sbs_{}.py".format(utils.get_random_string())
         script = open(filename, "w")
 
         # write preamble

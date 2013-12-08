@@ -6,6 +6,7 @@ from . import utils
 from . import db
 from . import fit
 from . import meta
+from . import buildingblocks as bb
 
 import itertools as it
 import numpy as np
@@ -36,7 +37,7 @@ class LIFsampler(object):
             self.db_params = db.sync_params_to_db(neuron_parameters)
 
         elif neuron_model is None and neuron_parameters is None:
-            log.info("Getting parameters with index {}".format(index))
+            log.info("Getting parameters with id {}".format(id))
             query = db.NeuronParameters.select()
 
             if id is not None:
@@ -58,10 +59,15 @@ class LIFsampler(object):
         # as well as determining weights
         self.db_calibration = None
 
+        # the distribution of the free memory potential
+        self.db_vmem_dist = None
+
         # the sources used in calibration
         self.db_sources = None
 
         self.population = None
+        self.sources = None
+        self.source_populations = None
 
     # implement bias_bio and bias_theo as properties so
     # the user can assign either and query the other automatically
@@ -139,6 +145,10 @@ class LIFsampler(object):
     def pynn_model(self):
         return self.db_params.pynn_model
 
+    @property
+    def has_vmem_dist(self):
+        return self.db_vmem_dist is not None
+
     def get_pynn_parameters(self):
         """
             Returns dictionary with all needed pynn parameters to implement
@@ -160,6 +170,12 @@ class LIFsampler(object):
 
     def forget_calibration(self):
         """
+            Unset the vmem distribution already measured.
+        """
+        self.db_vmem_dist = None
+
+    def forget_calibration(self):
+        """
             Unsets the calibration for this sampler.
         """
         self.db_calibration = None
@@ -173,13 +189,9 @@ class LIFsampler(object):
                 .where(db.Calibration.used_parameters == self.db_params)
         return [calib.id for calib in query]
 
-    def _create_pynn_sources(self):
-        assert(self.is_calibrated)
-        raise NotImplementedError
-
     def get_v_rest_from_bias(self):
         assert(self.is_calibrated)
-        return self.calibration.v_p05 + self.bias_bio
+        return self.db_calibration.v_p05 + self.bias_bio
 
     def load_calibration(self, id=None):
         """
@@ -209,7 +221,29 @@ class LIFsampler(object):
         log.info("Calibration loaded.")
         return True
 
-    def create(self, population=None, create_pynn_sources=True):
+    def load_vmem_distribution(self, id=None):
+        """
+            Attempt to load a certain vmem distribution.
+
+            By default the newest will be loaded, alternatively
+        """
+        log.info("Attempting to load vmem distribution.")
+        query = db.VmemDistribution.select()\
+                .where(db.VmemDistribution.used_parameters == self.db_params)
+
+        if id is not None:
+            query.where(db.VmemDistribution.id == id)
+
+        try:
+            self.db_vmem_dist = query.get()
+        except db.VmemDistribution.DoesNotExist:
+            log.info("No vmem distribution present.")
+            return False
+
+        log.info("Vmem distribution loaded.")
+        return True
+
+    def create(self, duration=None, population=None, create_pynn_sources=True):
         """
             Actually configures the supplied pyNN-object `popluation`
             (Population, PopulationView etc.) to have the loaded parameters and
@@ -238,7 +272,12 @@ class LIFsampler(object):
         self.population.set(**params)
 
         if create_pynn_sources == True:
-            self._create_pynn_sources()
+            assert duration is not None, "Instructed to create sources "\
+                    "without duration!"
+            sources_cfg = self.get_sources_cfg_lod()
+            self.sources = bb.create_sources(sim, sources_cfg)
+            self.source_projections = bb.connect_sources(sim, sources_cfg,
+                    self.sources, self.population)
 
         return self.population
 
@@ -260,19 +299,6 @@ class LIFsampler(object):
                 ):
             self.db_sources.append(db.create_source_cfg(rate, weight, is_exc))
 
-    def get_source_cfg(self, is_exc=True):
-        """
-            Return excitatory (default) or inhibitory (`is_exc==False`) source
-            configuration.
-        """
-        return filter(lambda x: x.is_exc==is_exc, self.db_sources)
-
-    def get_source_rates(self, is_exc=True):
-        return [src.rate for src in self.get_source_cfg(is_exc)]
-
-    def get_source_weights(self, is_exc=True):
-        return [src.weight for src in self.get_source_cfg(is_exc)]
-
     def calibrate(self, **calibration_params):
         """
             Calibrate the sampler, using the specified source parameters.
@@ -286,18 +312,21 @@ class LIFsampler(object):
 
         # sync to db because the gathering function writes to it
 
-        self._calc_distribution()
+        self._calc_distribution_theo()
         self._estimate_alpha()
 
         self.db_calibration.save()
 
         # by importing here we avoid importing networking stuff until we have to
-        from .gather_calibration_data import gather_calibration_data
-        gather_calibration_data(
-                db_neuron_params=self.db_params,
-                db_partial_calibration=self.db_calibration,
-                db_sources=self.db_sources,
-                sim_name=self.sim_name)
+        from .gather_data import gather_calibration_data
+        self.db_calibration.samples_v_rest, self.db_calibration.samples_p_on =\
+                gather_calibration_data(
+                    sim_name=self.sim_name,
+                    calib_cfg=self.db_calibration.get_non_null_fields(),
+                    neuron_model=self.pynn_model,
+                    neuron_params=self.db_params.get_pynn_parameters(),
+                    sources_cfg=self.get_sources_cfg_lod()
+                )
 
         log.info("Calibration data gathered, performing fit.")
         self.db_calibration.v_p05, self.db_calibration.alpha = fit.fit_sigmoid(
@@ -312,6 +341,45 @@ class LIFsampler(object):
 
         self.db_calibration.link_sources(self.db_sources)
 
+    def measure_vmem_distribution(self, **vmem_distribution_params):
+        """
+            Measure the distribution of the free membrane potential, given
+            the parameters (attributes of VmemDistribution).
+        """
+        assert self.is_calibrated
+        if  not self.has_vmem_dist:
+            log.warn("Vmem distribution already measured, taking new dataset!")
+        self.db_vmem_dist = db.VmemDistribution(**vmem_distribution_params)
+        self.db_vmem_dist.used_parameters = self.db_params
+        self.db_vmem_dist.save()
+
+        from .gather_data import gather_free_vmem_trace
+
+        self.db_vmem_dist.voltage_trace = volt_trace = gather_free_vmem_trace(
+                distribution_params=self.db_vmem_dist.get_non_null_fields(),
+                neuron_model=self.pynn_model,
+                neuron_params=self.get_pynn_parameters(),
+                sources_cfg=self.get_sources_cfg_lod(),
+                sim_name=self.sim_name
+            )
+
+        self.db_vmem_dist.mean = volt_trace.mean()
+        self.db_vmem_dist.std = volt_trace.std()
+
+    def get_sources_cfg_lod(self):
+        """
+            Get source parameters as List-Of-Dictionaries
+        """
+        needed_attributes = [
+                "rate",
+                "weight",
+                "is_exc",
+                "has_spikes",
+                "spike_times",
+            ]
+        return [{k: getattr(src, k) for k in needed_attributes}
+                for src in self.db_sources]
+
     def get_all_source_parameters(self):
         """
             Returns a tuple of `np.array`s with source configuration
@@ -325,7 +393,7 @@ class LIFsampler(object):
     # INTERNALLY USED METHODS #
     ###########################
 
-    def _calc_distribution(self):
+    def _calc_distribution_theo(self):
         dbc = self.db_calibration
 
         dist = getattr(utils, "{}_distribution".format(self.pynn_model))
@@ -337,7 +405,7 @@ class LIFsampler(object):
 
         dbc.mean, dbc.std, dbc.g_tot = dist(*args, **kwargs)
 
-        log.info(u"Membrane distribution: {:.3f} ± {:.3f} mV".format(
+        log.info(u"Theoretical membrane distribution: {:.3f} ± {:.3f} mV".format(
             dbc.mean, dbc.std))
 
     def _estimate_alpha(self):
@@ -357,7 +425,7 @@ class LIFsampler(object):
     ##################
 
     @meta.plot_function("calibration")
-    def plot_calibration(self, fig, ax, plot_v_dist=False):
+    def plot_calibration(self, fig, ax, plot_v_dist_theo=False):
         assert self.is_calibrated
 
         samples_v_rest = self.db_calibration.samples_v_rest
@@ -369,7 +437,7 @@ class LIFsampler(object):
 
         xdata = np.linspace(v_thresh-4.*std, v_thresh+4.*std, 500)
 
-        if plot_v_dist:
+        if plot_v_dist_theo:
             estim_dist_v_thresh = utils.gauss(xdata, v_thresh, std)
         estim_cdf_v_thresh = utils.erfm(xdata, v_thresh, std)
         estim_sigmoid = utils.sigmoid_trans(xdata, v_thresh, self.alpha_theo)
@@ -377,7 +445,7 @@ class LIFsampler(object):
         fitted_p_on = utils.sigmoid_trans(samples_v_rest, v_p05,
                 self.alpha_fitted)
 
-        if plot_v_dist:
+        if plot_v_dist_theo:
             ax.plot(xdata, estim_dist_v_thresh,
                     label="est. $V_{mem}$ distribution @ $\mu = v_{thresh}$")
         ax.plot(xdata, estim_cdf_v_thresh,
@@ -395,4 +463,16 @@ class LIFsampler(object):
         ax.set_ylabel("$p_{ON}$")
 
         ax.legend(loc="upper left")
+
+
+    @meta.plot_function("free_vmem_dist")
+    def plot_free_vmem(self, fig, ax, num_bins=200):
+        assert self.has_vmem_dist
+
+        ax.hist(self.db_vmem_dist.voltage_trace, bins=num_bins,
+                fc="None")
+
+        ax.set_xlabel("$V_{mem}$")
+        ax.set_ylabel("$p(V_{mem,free})$")
+
 

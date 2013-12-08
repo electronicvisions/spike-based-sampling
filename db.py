@@ -40,8 +40,7 @@ def setup(basename="database"):
     log.info("Setting up storage for datasets: {}".format(ds_name))
     meta.data_storage = h5py.File(ds_name, "a")
 
-    for model in [NeuronParameters, Calibration, SourceCFG,
-            SourceCFGInCalibration]:
+    for model in _merge_order:
         if not model.table_exists():
             log.info("Creating table: {}".format(model.__name__))
             model.create_table()
@@ -87,9 +86,27 @@ class BaseModel(pw.Model):
     """
         The base model that sets the database.
     """
+    def get_non_null_fields(self):
+        """
+            Gets all fields that 
+            a) Are not None/null
+            b) Are not simply sha1 sums.
+            c) Are not the `date` attribute.
+        """
+        filter_func = lambda k: not k.endswith("_sha1") and k != "date"\
+                and isinstance(getattr(self.__class__, k, None), pw.Field)
+        field_names = filter(filter_func, dir(self))\
+                + getattr(self.__class__, "_storage_fields")
+        return {k: getattr(self, k) for k in field_names\
+                if getattr(self, k) is not None}
+
     class Meta(object):
         database = database
 
+
+##################################
+# Actual models used in database #
+##################################
 
 class NeuronParameters(BaseModel):
     pynn_model = pw.CharField(max_length=48) # name of the pyNN model
@@ -219,12 +236,21 @@ class VmemDistribution(BaseModel):
     __metaclass__ = meta.StorageFields
     # config
     dt = pw.DoubleField(default=0.1)
+    duration = pw.DoubleField(default=100000.0)
+    used_parameters = pw.ForeignKeyField(rel_model=NeuronParameters,
+            related_name="distributions")
+
+    # misc
+    date = pw.DateTimeField(default=datetime.datetime.now)
 
     # results
     mean = pw.DoubleField(null=True)
     std = pw.DoubleField(null=True)
 
     _storage_fields = ["voltage_trace"]
+
+    class Meta:
+        order_by = ("-date",)
 
 
 class SourceCFGInCalibration(BaseModel):
@@ -233,6 +259,10 @@ class SourceCFGInCalibration(BaseModel):
     calibration = pw.ForeignKeyField(Calibration, related_name="sources",
             cascade=True)
 
+
+###################################
+# Utility functions for DB-access #
+###################################
 
 def sync_params_to_db(neuron_parameters):
     """
@@ -272,8 +302,13 @@ def create_source_cfg(rate, weight, is_excitatory=True):
     return src_cfg
 
 
-_merge_order = [ NeuronParameters, SourceCFG, Calibration,
-        SourceCFGInCalibration ]
+_merge_order = [
+        NeuronParameters,
+        SourceCFG,
+        Calibration,
+        SourceCFGInCalibration,
+        VmemDistribution,
+    ]
 
 def merge_databases(db_name_source, db_name_target):
     """
