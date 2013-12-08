@@ -212,7 +212,7 @@ class SourceCFG(BaseModel):
 
     @property
     def has_spikes(self):
-        return self.rate is None
+        return self.spike_times_sha1 is not None
 
 
 class VmemDistribution(BaseModel):

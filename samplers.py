@@ -69,8 +69,8 @@ class LIFsampler(object):
     @property
     def bias_theo(self):
         if not self.bias_is_theo:
-            # if the bias is in bio units we need calibration to give the bio
-            # equivalent
+            # if the bias is in bio units we need calibration to give the
+            # theoretical equivalent
             assert(self.is_calibrated)
             return self._bias / self.db_calibration.alpha
         else:

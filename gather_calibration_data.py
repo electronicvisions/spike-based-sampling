@@ -8,6 +8,10 @@
 import sys
 import os.path as osp
 import functools as ft
+import zmq
+import numpy as np
+import subprocess as sp
+import itertools as it
 
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 
@@ -15,25 +19,20 @@ sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 #       script.
 from sbs import comm
 from sbs.logcfg import log
+from sbs import buildingblocks as bb
 
-import zmq
-import numpy as np
-import subprocess as sp
-import itertools as it
-import os.path as osp
-import sys
 
 context = zmq.Context()
 
-def gather_calibration_data(db_neuron_params, db_partial_calibration, db_sources,
-        sim_name="pyNN.nest"):
+def gather_calibration_data(db_neuron_params, db_partial_calibration,
+        db_sources, sim_name="pyNN.nest"):
     """
         db_neuron_params:
             NeuronParameters instance that contains the parameters to use.
 
         db_partial_calibration:
             Calibration instance holding configuration parameters
-            (duration, num_samples).
+            (duration, num_samples, etc).
 
         db_sources:
             List of sources to use for calibration.
@@ -115,40 +114,15 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
 
     burn_in_time = calib_cfg["burn_in_time"]
     duration = calib_cfg["duration"]
+    total_duration = burn_in_time + duration
 
     samples_v_rest = np.linspace(mean-spread, mean+spread, num)
-
-    sources_poisson_cfg = filter(lambda s: not s["has_spikes"], sources_cfg)
-    sources_array_cfg = filter(lambda s: s["has_spikes"], sources_cfg)
-
 
     # TODO maybe implement a seed here
     sim.setup(time_step=calib_cfg["dt"])
 
     # create sources
-    # Note: poisson_generator takes "stop", spike source poisson takes
-    # "duration"!
-    if hasattr(sim, "nest"):
-        source_t = ft.partial(sim.native_cell_type("poisson_generator"),
-                stop=duration)
-    else:
-        source_t = ft.partial(sim.SpikeSourcePoisson, duration=duration)
-
-    if len(sources_poisson_cfg) > 0:
-        log.info("Setting up Poisson sources.")
-        rates = np.array([src_cfg["rate"] for src_cfg in sources_array_cfg])
-        sources_poisson = sim.Population(len(sources_poisson_cfg),
-                source_t(start=0.))
-
-        for src, rate in it.izip(sources_poisson, rates):
-            src.rate = rate
-
-    if len(sources_array_cfg):
-        log.info("Setting up spike array sources.")
-        sources_array = sim.Population(len(sources_array_cfg),
-                sim.SpikeSourceArray())
-        for src, src_cfg in it.izip(sources_array, sources_array_cfg):
-            src.spike_times = src_cfg["spike_times"]
+    sources = bb.create_sources(sim, sources_cfg, total_duration)
 
     log.info("Setting up {} samplers.".format(num))
     samplers = sim.Population(num, getattr(sim, neuron_model)(**neuron_params))
@@ -157,28 +131,7 @@ def standalone_gather_calibration_data(sim_name, calib_cfg, neuron_model,
     samplers.set(v_rest=samples_v_rest)
 
     # connect the two
-    projections_poisson = []
-    projections_array = []
-
-    if len(sources_poisson_cfg) > 0:
-        log.info("Connecting samplers to Poisson sources.")
-        for i, src_cfg in enumerate(sources_poisson_cfg):
-            # get a population view because only those can be connected
-            src = sources_poisson[i:i+1]
-            projections_poisson.append(sim.Projection(src, samplers,
-                sim.AllToAllConnector(),
-                synapse_type=sim.StaticSynapse(weight=src_cfg["weight"]),
-                receptor_type=["inhibitory", "excitatory"][src_cfg["is_exc"]]))
-
-    if len(sources_array_cfg) > 0:
-        log.info("Connecting samplers to spike array sources.")
-        for i, src_cfg in enumerate(sources_array_cfg):
-            # get a population view because only those can be connected
-            src = sources_array[i:i+1]
-            projections_array.append(sim.Projection(src, samplers,
-                sim.AllToAllConnector(),
-                synapse_type=sim.StaticSynapse(weight=src_cfg["weight"]),
-                receptor_type=["inhibitory", "excitatory"][src_cfg["is_exc"]]))
+    projections = bb.connect_sources(sim, sources_cfg, sources, samplers)
 
     steps = 10
     increment = duration / steps
