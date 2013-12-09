@@ -20,6 +20,7 @@ import collections as c
 import tempfile
 tempfile.gettempdir()
 import os
+import os.path as osp
 
 # database for parameters
 database = pw.SqliteDatabase(None)
@@ -27,6 +28,11 @@ database = pw.SqliteDatabase(None)
 # classes for datastorage
 
 def setup(basename="database"):
+
+    # avoid redundant ".sql.sql" or ".h5.h5" file endings
+    base, ext = osp.splitext(basename)
+    if ext in [".h5", ".sql"]:
+        basename = base
 
     db_name = "{}.sql".format(basename)
     ds_name = "{}.h5".format(basename)

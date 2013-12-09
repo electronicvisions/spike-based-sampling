@@ -30,7 +30,7 @@ class SerializingSocket(zmq.Socket):
         """
         pobj = pkl.dumps(obj, protocol)
         zobj = zlib.compress(pobj)
-        log.debug("Zipped pickle is {:d} bytes".format(len(zobj)))
+        log.debug("Zipped pickle is {:d} bytes.".format(len(zobj)))
         return self.send(zobj, flags=flags)
 
     def recv_zipped_pkl(self, flags=0):
@@ -156,9 +156,12 @@ class RunInSubprocess(object):
         socket = self._setup_socket_client(address)
         args, kwargs = self._recv_arguments(socket)
 
-        return_value = self._func(*args, **kwargs)
+        return_value = None
+        try:
+            return_value = self._func(*args, **kwargs)
+        finally:
+            self._send_returnvalue(socket, return_value)
 
-        self._send_returnvalue(socket, return_value)
 
     def _spawn_process(self, script_filename, address):
         log.debug("Spawning subprocess..")
@@ -211,7 +214,7 @@ class RunInSubprocess(object):
 
 
     def _get_transmitter(self, obj):
-        if isinstance(obj, np.ndarray):
+        if isinstance(obj, np.ndarray) and obj.flags.c_contiguous:
             return "array"
         else:
             return "zipped_pkl"
