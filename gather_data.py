@@ -11,6 +11,8 @@ import functools as ft
 import numpy as np
 import subprocess as sp
 import itertools as it
+import logging
+from pprint import pformat as pf
 
 sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 
@@ -78,6 +80,10 @@ def gather_calibration_data(sim_name, calib_cfg, neuron_model,
     samplers.initialize(v=samples_v_rest)
     samplers.set(v_rest=samples_v_rest)
 
+    if log.getEffectiveLevel() <= logging.DEBUG:
+        for i, s in enumerate(samplers):
+            log.debug("v_rest of neuron #{}: {} mV".format(i, s.v_rest))
+
     # connect the two
     projections = bb.connect_sources(sim, sources_cfg, sources, samplers)
 
@@ -94,6 +100,9 @@ def gather_calibration_data(sim_name, calib_cfg, neuron_model,
 
     log.info("Reading spikes.")
     spiketrains = samplers.get_data("spikes").segments[0].spiketrains
+    if log.getEffectiveLevel() <= logging.DEBUG:
+        for i, st in enumerate(spiketrains):
+            log.debug("{}: {}".format(i, pf(st)))
     num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
             dtype=int)
 

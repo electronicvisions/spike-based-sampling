@@ -126,16 +126,29 @@ class RunInSubprocess(object):
                     "subprocess!".format(self._func_name))
 
     def __call__(self, *args, **kwargs):
-        script_filename = self._setup_script_file()
-        socket, address = self._setup_socket_host()
+        return self._host(*args, **kwargs)
 
-        process = self._spawn_process(script_filename, address)
+    def _host(self, *args, **kwargs):
+        script_filename = None
+        return_values = None
+        process = None
+        try:
+            script_filename = self._setup_script_file()
+            socket, address = self._setup_socket_host()
 
-        self._send_arguments(socket, args, kwargs)
-        return_values = self._recv_returnvalue(socket)
+            process = self._spawn_process(script_filename, address)
 
-        process.wait()
-        self._delete_script_file(script_filename)
+            self._send_arguments(socket, args, kwargs)
+            return_values = self._recv_returnvalue(socket)
+
+            process.wait()
+        except:
+            raise
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+            if script_filename is not None:
+                self._delete_script_file(script_filename)
 
         return return_values
 

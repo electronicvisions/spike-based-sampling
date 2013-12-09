@@ -84,6 +84,7 @@ def connect_sources(sim, sources_cfg, sources, target):
 
     num_synapses = sum((len(proj) for proj in\
             projections_poisson+projections_array))
+    log.info("Sources -> target synapse count: {}".format(num_synapses))
 
     return {"poisson": projections_poisson, "array": projections_array}
 

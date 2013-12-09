@@ -37,7 +37,7 @@ class LIFsampler(object):
             self.db_params = db.sync_params_to_db(neuron_parameters)
 
         elif neuron_model is None and neuron_parameters is None:
-            log.info("Getting parameters with id {}".format(id))
+            log.info("Getting parameters with id {}.".format(id))
             query = db.NeuronParameters.select()
 
             if id is not None:
@@ -218,7 +218,8 @@ class LIFsampler(object):
 
         self._load_sources()
 
-        log.info("Calibration loaded.")
+        log.info("Calibration with id {} loaded.".format(
+            self.db_calibration.id))
         return True
 
     def load_vmem_distribution(self, id=None):
@@ -240,7 +241,8 @@ class LIFsampler(object):
             log.info("No vmem distribution present.")
             return False
 
-        log.info("Vmem distribution loaded.")
+        log.info("Vmem distribution with id {} loaded.".format(
+            self.db_vmem_dist.id))
         return True
 
     def create(self, duration=None, population=None, create_pynn_sources=True):
@@ -425,7 +427,8 @@ class LIFsampler(object):
     ##################
 
     @meta.plot_function("calibration")
-    def plot_calibration(self, fig, ax, plot_v_dist_theo=False):
+    def plot_calibration(self, fig, ax,
+            plot_v_dist_theo=False, plot_vlines=False):
         assert self.is_calibrated
 
         samples_v_rest = self.db_calibration.samples_v_rest
@@ -456,21 +459,28 @@ class LIFsampler(object):
         ax.plot(samples_v_rest, samples_p_on, marker="x", ls="", c="b",
                 label="measured $p_{ON}$")
 
-        ax.axvline(v_thresh, ls="--", label="$v_{thresh}$", c="r")
-        ax.axvline(v_p05, ls="--", label="$v_{p=0.5}$", c="b")
+        if plot_vlines:
+            ax.axvline(v_thresh, ls="--", label="$v_{thresh}$", c="r")
+            ax.axvline(v_p05, ls="--", label="$v_{p=0.5}$", c="b")
 
         ax.set_xlabel("$V_{rest}$")
         ax.set_ylabel("$p_{ON}$")
 
-        ax.legend(loc="upper left")
+        ax.legend(bbox_to_anchor=(0.35, 1.))
 
 
     @meta.plot_function("free_vmem_dist")
     def plot_free_vmem(self, fig, ax, num_bins=200):
         assert self.has_vmem_dist
 
-        ax.hist(self.db_vmem_dist.voltage_trace, bins=num_bins,
+        volttrace = self.db_vmem_dist.voltage_trace
+
+        ax.hist(volttrace, bins=num_bins, normed=True,
                 fc="None")
+
+        ax.set_xlim(volttrace.min(), volttrace.max())
+
+        ax.ticklabel_format(axis="x", style='sci', useOffset=False)
 
         ax.set_xlabel("$V_{mem}$")
         ax.set_ylabel("$p(V_{mem,free})$")

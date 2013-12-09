@@ -200,6 +200,7 @@ class Calibration(BaseModel):
                   Also, they have to be all linked at the same time (but do not
                   have to be unique).
         """
+        log.info("Linking {} sources.".format(len(sources)))
         assert(not any((src.get_id() is None for src in sources)))
         # delete any sources previously linked to this node
         # node we do allow sources to be specified again
