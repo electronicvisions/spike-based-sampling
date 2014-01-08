@@ -212,7 +212,6 @@ class RunInSubprocess(object):
         log.debug("func_dir: {}".format(func_dir))
         return func_dir
 
-
     def _get_transmitter(self, obj):
         if isinstance(obj, np.ndarray) and obj.flags.c_contiguous:
             return "array"
@@ -314,7 +313,8 @@ class RunInSubprocess(object):
         # always started on the same machine, might change in the future.
 
         log.debug("Setting up script file.")
-        filename = "/dev/shm/sbs_{}.py".format(utils.get_random_string())
+        filename = "/dev/shm/{}_{}.py".format(self._func_module.split(".")[0],
+                utils.get_random_string())
         script = open(filename, "w")
 
         # write preamble

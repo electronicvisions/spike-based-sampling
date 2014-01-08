@@ -26,9 +26,9 @@ import os.path as osp
 database = pw.SqliteDatabase(None)
 
 # classes for datastorage
+current_basename = None
 
 def setup(basename="database"):
-
     # avoid redundant ".sql.sql" or ".h5.h5" file endings
     base, ext = osp.splitext(basename)
     if ext in [".h5", ".sql"]:
@@ -50,6 +50,8 @@ def setup(basename="database"):
         if not model.table_exists():
             log.info("Creating table: {}".format(model.__name__))
             model.create_table()
+    global current_basename
+    current_basename = osp.abspath(basename)
 
 
 def filter_incomplete_calibrations(query):
@@ -101,7 +103,7 @@ class BaseModel(pw.Model):
         """
         filter_func = lambda k: not k.endswith("_sha1") and k != "date"\
                 and isinstance(getattr(self.__class__, k, None), pw.Field)
-        field_names = filter(filter_func, dir(self))\
+        field_names = filter(filter_func, vars(self)).keys()\
                 + getattr(self.__class__, "_storage_fields")
         return {k: getattr(self, k) for k in field_names\
                 if getattr(self, k) is not None}
@@ -244,6 +246,7 @@ class VmemDistribution(BaseModel):
     # config
     dt = pw.DoubleField(default=0.1)
     duration = pw.DoubleField(default=100000.0)
+    burn_in_time = pw.DoubleField(default=200.0)
     used_parameters = pw.ForeignKeyField(rel_model=NeuronParameters,
             related_name="distributions")
 
@@ -349,7 +352,7 @@ def merge_databases(db_name_source, db_name_target):
 
         # get all original fields
         model_fields = []
-        for a in dir(model):
+        for a in vars(model).keys():
             # we dont want to sync dates
             if a == "date":
                 continue
@@ -391,7 +394,7 @@ def merge_databases(db_name_source, db_name_target):
         storage_fields = getattr(model, "_storage_fields", tuple())
 
         # we need to update ForeignKeys
-        fk_fields = [getattr(model, a) for a in dir(model)
+        fk_fields = [getattr(model, a) for a in vars(model).keys()
                 if isinstance(getattr(model, a), pw.ForeignKeyField)]
 
         for old_id, attributes in tmp_storage[model_name].iteritems():

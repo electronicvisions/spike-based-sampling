@@ -5,6 +5,8 @@ import numpy as np
 from scipy.special import erf
 import string
 import hashlib
+import collections as c
+import time
 
 from .logcfg import log
 
@@ -178,4 +180,40 @@ def get_sha1(array):
     sha1 = hashlib.sha1()
     sha1.update(array)
     return sha1.hexdigest()
+
+
+TimeTuple = c.namedtuple("duration", "d h m s ms".split())
+
+# durations in seconds
+TIME_DELTAS = TimeTuple(24*3600, 3600, 60, 1, .001)
+
+def make_time_closure_writable(timediff):
+    timediff = [timediff]
+    def sub(s):
+        # closures need mutable objects to write to, but
+        # numbers in themselves are immutable
+        t = timediff[0]
+        timediff[0] = np.mod(t, s)
+        return int(np.floor(t/s))
+    return sub
+
+def get_time_tuple(timediff):
+    return TimeTuple(*map(make_time_closure_writable(timediff), TIME_DELTAS))
+
+def format_time(timediff):
+    fmtd = get_time_tuple(timediff)
+    return " ".join(
+            ("{0}{1}".format(getattr(fmtd, s), s) for s in fmtd._fields
+                if getattr(fmtd, s) > 0.))
+
+def get_eta(t_start, current, total):
+    """
+        Estimate time it takes to finish for simulation of work `total`, if
+        the simulation was started at `t_start` and has done work `current`.
+    """
+    t_elapsed = time.time() - t_start
+    if current > 0.:
+        return t_elapsed / current * (total - current)
+    else:
+        return "N/A"
 

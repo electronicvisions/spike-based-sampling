@@ -20,17 +20,19 @@ def create_sources(sim, sources_cfg, duration):
 
     # Note: poisson_generator takes "stop", spike source poisson takes
     # "duration"!
+    source_params = {"start" : 0.}
     if hasattr(sim, "nest"):
-        source_t = ft.partial(sim.native_cell_type("poisson_generator"),
-                stop=duration)
+        source_t = sim.native_cell_type("poisson_generator")
+        source_params["stop"] = duration
     else:
-        source_t = ft.partial(sim.SpikeSourcePoisson, duration=duration)
+        source_t = sim.SpikeSourcePoisson
+        source_params["duration"] = duration
 
     if len(sources_poisson_cfg) > 0:
         log.info("Setting up Poisson sources.")
-        rates = np.array([src_cfg["rate"] for src_cfg in sources_array_cfg])
+        rates = np.array([src_cfg["rate"] for src_cfg in sources_poisson_cfg])
         sources_poisson = sim.Population(len(sources_poisson_cfg),
-                source_t(start=0.))
+                source_t(**source_params))
 
         for src, rate in it.izip(sources_poisson, rates):
             src.rate = rate
@@ -59,32 +61,28 @@ def connect_sources(sim, sources_cfg, sources, target):
     sources_poisson_cfg = filter(lambda s: not s["has_spikes"], sources_cfg)
     sources_array_cfg = filter(lambda s: s["has_spikes"], sources_cfg)
 
-    projections_poisson = []
-    projections_array = []
+    projections = {}
 
+    src_types = []
     if len(sources_poisson_cfg) > 0:
-        log.info("Connecting samplers to Poisson sources.")
+        src_types.append("poisson")
+    if len(sources_array_cfg) > 0:
+        src_types.append("array")
+
+    for st in src_types:
+        log.info("Connecting samplers to {} sources.".format(st))
+
+        local_projections = projections.setdefault(st, [])
         for i, src_cfg in enumerate(sources_poisson_cfg):
             # get a population view because only those can be connected
-            src = sources["poisson"][i:i+1]
-            projections_poisson.append(sim.Projection(src, target,
+            src = sources[st][i:i+1]
+            local_projections.append(sim.Projection(src, target,
                 sim.AllToAllConnector(),
                 synapse_type=sim.StaticSynapse(weight=src_cfg["weight"]),
                 receptor_type=["inhibitory", "excitatory"][src_cfg["is_exc"]]))
 
-    if len(sources_array_cfg) > 0:
-        log.info("Connecting samplers to spike array sources.")
-        for i, src_cfg in enumerate(sources_array_cfg):
-            # get a population view because only those can be connected
-            src = sources["array"][i:i+1]
-            projections_array.append(sim.Projection(src, target,
-                sim.AllToAllConnector(),
-                synapse_type=sim.StaticSynapse(weight=src_cfg["weight"]),
-                receptor_type=["inhibitory", "excitatory"][src_cfg["is_exc"]]))
-
-    num_synapses = sum((len(proj) for proj in\
-            projections_poisson+projections_array))
+    num_synapses = sum((len(proj) for proj in projections.itervalues()))
     log.info("Sources -> target synapse count: {}".format(num_synapses))
 
-    return {"poisson": projections_poisson, "array": projections_array}
+    return projections
 
