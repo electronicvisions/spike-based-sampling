@@ -217,7 +217,7 @@ class Calibration(BaseModel):
                   Also, they have to be all linked at the same time (but do not
                   have to be unique).
         """
-        log.info("Linking {} sources.".format(len(sources)))
+        log.debug("Linking {} sources.".format(len(sources)))
         assert(not any((src.get_id() is None for src in sources)))
         # delete any sources previously linked to this node
         # node we do allow sources to be specified again
@@ -299,7 +299,7 @@ def sync_params_to_db(neuron_parameters):
     try:
         params = NeuronParameters.get(*(getattr(NeuronParameters, k) == v\
                     for k,v in neuron_parameters.iteritems()))
-        log.info("Parameters found in database, loaded.")
+        log.debug("Parameters found in database, loaded.")
     except NeuronParameters.DoesNotExist:
         log.info("Parameters not found in database, creating new entry.")
         params = NeuronParameters.create(**neuron_parameters)
@@ -317,7 +317,7 @@ def create_source_cfg(rate, weight, is_excitatory=True):
         src_cfg = SourceCFG.get(SourceCFG.rate == rate,
                 SourceCFG.weight == weight,
                 SourceCFG.is_exc == is_excitatory )
-        log.info("Source configuration loaded from database.")
+        log.debug("Source configuration loaded from database.")
     except SourceCFG.DoesNotExist:
         log.info("Source configuration not present in database, creating..")
         src_cfg = SourceCFG.create(rate=rate, weight=weight,

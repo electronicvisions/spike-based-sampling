@@ -109,7 +109,7 @@ class CompleteDistribution(Distribution):
             self._probs[state] = value
 
     def all_states(self):
-        return np.ndindex((2,) * self.num_samplers)
+        return np.ndindex(*self.probs._probs.shape)
 
     def all_probabilities(self):
         return self.probs._probs.flatten()
@@ -130,7 +130,11 @@ class ExclusiveDistribution(Distribution):
             """
             if log.getEffectiveLevel() <= logging.DEBUG:
                 log.debug("Current state: {}".format(pf(state)))
-            iterables = map(lambda s: xrange(s.start, s.stop, s.step)
+
+            iterables = map(lambda s: xrange(
+                    s.start if s.start is not None else 0,
+                    s.stop if s.stop is not None else 2,
+                    s.step if s.step is not None else 1)
                 if isinstance(s, slice) else (s,), state)
             if log.getEffectiveLevel() <= logging.DEBUG:
                 log.debug("Current state: {}".format(pf(iterables)))
@@ -165,7 +169,7 @@ class ExclusiveDistribution(Distribution):
                     j = 0
                     while ss[j] == 0:
                         j += 1
-                    if isinstance(value, c.Sequence):
+                    if utils.check_list_array(value):
                         self._probs[j] = value[i]
                     else:
                         self._probs[j] = value
@@ -250,15 +254,16 @@ class BoltzmannMachine(object):
             self.samplers = [samplers.LIFsampler(
                 sim_name=self.sim_name,
                 pynn_model=pynn_model[i],
-                neuron_parameters=neuron_parameters[i])\
+                neuron_parameters=neuron_parameters[i],
+                silent=True)\
                         for i in neuron_index_to_parameters]
 
         elif neuron_parameters_db_ids is not None:
             if not isinstance(neuron_parameters_db_ids, c.Sequence):
                 neuron_parameters_db_ids = (neuron_parameters_db_ids,)\
                         * self.num_samplers
-            self.samplers = [samplers.LIFsampler(id=id) for id in
-                    neuron_parameters_db_ids]
+            self.samplers = [samplers.LIFsampler(id=id, sim_name=self.sim_name,
+                silent=True) for id in neuron_parameters_db_ids]
         else:
             raise Exception("Please provide either parameters or ids in the "
                     "database!")
@@ -399,7 +404,7 @@ class BoltzmannMachine(object):
 
     @biases_theo.setter
     def biases_theo(self, biases):
-        if not isinstance(biases, c.Sequence):
+        if not utils.check_list_array(biases):
             biases = it.repeat(biases)
 
         for b, sampler in it.izip(biases, self.samplers):
@@ -407,7 +412,7 @@ class BoltzmannMachine(object):
 
     @biases_bio.setter
     def biases_bio(self, biases):
-        if not isinstance(biases, c.Sequence):
+        if not utils.check_list_array(biases):
             biases = it.repeat(biases)
 
         for b, sampler in it.izip(biases, self.samplers):
@@ -501,7 +506,6 @@ class BoltzmannMachine(object):
         """
             Returns True if successfully loaded, False otherwise.
         """
-        self.spike_data = utils.load_pickle(filename)
         try:
             self.spike_data = utils.load_pickle(filename)
             return True
@@ -537,16 +541,15 @@ class BoltzmannMachine(object):
 
             `**state_args` are passed to `self.generate_states`.
         """
-        log.info("Calculating marginal probability distribution for samplers: "
-                "{}".format(pf(tuple(self.sampler_idx))))
+        log.info("Calculating marginal probability distribution for {} "
+                "samplers.".format(len(self.sampler_idx)))
 
         marginals = np.zeros((len(self.sampler_idx),))
 
         for i in self.sampler_idx:
             sampler = self.samplers[i]
-
-            marginals[i] = len(self.spike_data["spiketrains"][i])\
-                    * sampler.db_params.tau_refrac
+            spikes = self.spike_data["spiketrains"][i]
+            marginals[i] = len(spikes) * sampler.db_params.tau_refrac
 
         marginals /= self.spike_data["duration"]
 
@@ -569,8 +572,8 @@ class BoltzmannMachine(object):
             `**state_args` are passed to `self.generate_states`.
         """
 
-        log.info("Calculating joint probability distribution for samplers: {}."\
-                .format(pf(dist.sampler_idx)))
+        log.info("Calculating joint probability distribution for {} samplers."\
+                .format(len(dist.sampler_idx)))
 
         tau_sampler = np.zeros((dist.num_samplers,))
 
@@ -624,6 +627,66 @@ class BoltzmannMachine(object):
         dist.normalize(self.spike_data["duration"])
 
         return dist
+
+
+    @meta.DependsOn("sampler_idx")
+    def dist_joint_theo(self):
+        """
+            Joint distribution for all selected samplers.
+        """
+        return self.get_dist_joint_theo(
+                dist=CompleteDistribution(sampler_idx=self.sampler_idx),
+                weights=self.weights_theo,
+                biases=self.biases_theo)
+
+    @meta.DependsOn("dist_joint_theo")
+    def dist_marginal_theo(self):
+        """
+            Marginal distribution
+        """
+        return self.get_dist_marginal_from_joint(self.dist_joint_theo)
+
+    @classmethod
+    def get_dist_joint_theo(cls, dist, weights, biases):
+        """
+            Simple script that calculates joint distributions for all states in
+            dist.
+        """
+        log.info("Calculating joint theoretical distribution for {} samplers."\
+                .format(len(dist.sampler_idx)))
+        sampler_idx = list(dist.sampler_idx)
+        lc_biases = biases[sampler_idx]
+        lc_weights = utils.fill_diagonal(weights[sampler_idx][:, sampler_idx],
+                value=lc_biases)
+
+        log.info("Biases: \n" + pf(lc_biases))
+        log.info("Weights: \n" + pf(lc_weights))
+
+        for state in dist.all_states():
+            arr_state = np.array(state)
+            prob = np.exp(arr_state.T.dot(lc_weights.dot(arr_state)))
+            dist.probs[state] = prob
+
+        dist.normalize()
+        return dist
+
+    @classmethod
+    def get_dist_marginal_from_joint(cls, dist):
+        """
+            Marginal for supplied distribution.
+        """
+        marginals = np.zeros((dist.num_samplers, 2))
+        for i in xrange(dist.num_samplers):
+            log.info("Sampler #" + str(i))
+            for s in (0, 1):
+                states = (slice(None),) * i + (s,)\
+                        + (slice(None),) * (dist.num_samplers-i-1)
+                probs = np.array(dist.probs[states])
+                marginals[i, s] = probs.sum()
+
+        marginals /= marginals.sum(axis=1).reshape(-1, 1)
+        return marginals
+
 
     ################
     # PYNN methods #

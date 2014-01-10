@@ -16,7 +16,7 @@ class LIFsampler(object):
     supported_pynn_neuron_models = ["IF_curr_exp", "IF_cond_exp"]
 
     def __init__(self, sim_name="pyNN.nest",
-            pynn_model=None, neuron_parameters=None, id=None):
+            pynn_model=None, neuron_parameters=None, id=None, silent=False):
         """
             `sim_name`: Name of the used simulator.
 
@@ -27,17 +27,22 @@ class LIFsampler(object):
             Alternatively: If both `pynn_model` and `neuron_parameters`
                 are None, the stored parameters of `id` are loaded.
         """
-        log.info("Setting up sampler.")
+        self.silent = silent
+
+        if not self.silent:
+            log.info("Setting up sampler.")
         self.sim_name = sim_name
 
         if pynn_model is not None and neuron_parameters is not None:
             self._ensure_model_is_supported(pynn_model)
-            log.info("Checking parameters in database..")
+            if not self.silent:
+                log.info("Checking parameters in database..")
             neuron_parameters["pynn_model"] = pynn_model
             self.db_params = db.sync_params_to_db(neuron_parameters)
 
         elif pynn_model is None and neuron_parameters is None:
-            log.info("Getting parameters with id {}.".format(id))
+            if not self.silent:
+                log.info("Getting parameters with id {}.".format(id))
             query = db.NeuronParameters.select()
 
             if id is not None:
@@ -239,7 +244,8 @@ class LIFsampler(object):
             Returns a bool to indicate whether or not the calibration data
             was successfully loaded.
         """
-        log.info("Attempting to load calibration.")
+        if not self.silent:
+            log.info("Attempting to load calibration.")
         query = db.Calibration.select()\
                 .where(db.Calibration.used_parameters == self.db_params)
 
@@ -249,12 +255,14 @@ class LIFsampler(object):
         try:
             self.db_calibration = query.get()
         except db.Calibration.DoesNotExist:
-            log.info("No calibration present.")
+            if not self.silent:
+                log.info("No calibration present.")
             return False
 
         self._load_sources()
 
-        log.info("Calibration with id {} loaded.".format(
+        if not self.silent:
+            log.info("Calibration with id {} loaded.".format(
             self.db_calibration.id))
         return True
 
@@ -264,7 +272,8 @@ class LIFsampler(object):
 
             By default the newest will be loaded, alternatively
         """
-        log.info("Attempting to load vmem distribution.")
+        if not self.silent:
+            log.info("Attempting to load vmem distribution.")
         query = db.VmemDistribution.select()\
                 .where(db.VmemDistribution.used_parameters == self.db_params)
 
@@ -274,10 +283,12 @@ class LIFsampler(object):
         try:
             self.db_vmem_dist = query.get()
         except db.VmemDistribution.DoesNotExist:
-            log.info("No vmem distribution present.")
+            if not self.silent:
+                log.info("No vmem distribution present.")
             return False
 
-        log.info("Vmem distribution with id {} loaded.".format(
+        if not self.silent:
+            log.info("Vmem distribution with id {} loaded.".format(
             self.db_vmem_dist.id))
         return True
 
@@ -329,7 +340,8 @@ class LIFsampler(object):
                     sources_cfg=self.get_sources_cfg_lod()
                 )
 
-        log.info("Calibration data gathered, performing fit.")
+        if not self.silent:
+            log.info("Calibration data gathered, performing fit.")
         self.db_calibration.v_p05, self.db_calibration.alpha = fit.fit_sigmoid(
             self.db_calibration.samples_v_rest,
             self.db_calibration.samples_p_on,
@@ -337,8 +349,9 @@ class LIFsampler(object):
             guess_alpha=self.db_calibration.alpha_theo)
         self.db_calibration.save()
 
-        log.info("Fitted alpha: {:.3f}".format(self.alpha_fitted))
-        log.info("Fitted v_p05: {:.3f} mV".format(self.v_p05))
+        if not self.silent:
+            log.info("Fitted alpha: {:.3f}".format(self.alpha_fitted))
+            log.info("Fitted v_p05: {:.3f} mV".format(self.v_p05))
 
         self.db_calibration.link_sources(self.db_sources)
 
@@ -394,11 +407,13 @@ class LIFsampler(object):
         dist = getattr(utils, "{}_distribution".format(self.pynn_model))
         args = self.get_all_source_parameters()
         if not self.is_completely_calibrated:
-            log.info("Computing vmem distribution ONLY from supplied neuron "
+            if not self.silent:
+                log.info("Computing vmem distribution ONLY from supplied neuron "
                      "parameters!")
             kwargs = self.db_params.get_pynn_parameters()
         else:
-            log.info("Computing vmem distribution with bias set to {}.".format(
+            if not self.silent:
+                log.info("Computing vmem distribution with bias set to {}.".format(
                 self.bias_theo))
             kwargs = self.get_pynn_parameters()
 
@@ -636,7 +651,8 @@ class LIFsampler(object):
         dbc = self.db_calibration
 
         dbc.mean, dbc.std, dbc.g_tot = self.get_vmem_dist_theo()
-        log.info(u"Theoretical membrane distribution: {:.3f}±{:.3f}mV".format(
+        if not self.silent:
+            log.info(u"Theoretical membrane distribution: {:.3f}±{:.3f}mV".format(
             dbc.mean, dbc.std))
 
     def _estimate_alpha(self):

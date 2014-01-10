@@ -281,3 +281,6 @@ def get_ordered_spike_idx(spiketrains):
 
     return sorted_spikes
 
+def check_list_array(obj):
+    return isinstance(obj, c.Sequence) or isinstance(obj, np.ndarray)
+

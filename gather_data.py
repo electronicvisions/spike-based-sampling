@@ -54,6 +54,11 @@ class RunInSubprocessWithDatabase(RunInSubprocess):
         return super(RunInSubprocessWithDatabase, self)\
                 ._recv_arguments(socket)
 
+def eta_from_burnin(t_start, burn_in, duration):
+    eta = utils.get_eta(t_start, burn_in, duration+burn_in)
+    if not isinstance(eta, basestring):
+        eta = utils.format_time(eta)
+    log.info("ETA (after burn-in): {}".format(eta))
 
 # make a log function with ETA
 def make_log_time(duration, num_steps=10, offset=0):
@@ -89,7 +94,7 @@ def get_callbacks(sim, log_time_params):
 # SAMPLER HELPER FUNCTIONS #
 ############################
 
-# @comm.RunInSubprocess
+@comm.RunInSubprocess
 def gather_calibration_data(sim_name, calib_cfg, pynn_model,
         neuron_params, sources_cfg):
     """
@@ -148,7 +153,10 @@ def gather_calibration_data(sim_name, calib_cfg, pynn_model,
 
     # bring samplers into high conductance state
     log.info("Burning in samplers for {} ms".format(burn_in_time))
+    t_start = time.time()
     sim.run(burn_in_time)
+    eta_from_burnin(t_start, burn_in_time, duration)
+
     log.info("Generating calibration data..")
     sim.run(duration, callbacks=callbacks)
 
@@ -196,7 +204,9 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
             "offset" : dp["burn_in_time"],
         })
     log.info("Burning in samplers for {} ms".format(dp["burn_in_time"]))
+    t_start = time.time()
     sim.run(dp["burn_in_time"])
+    eta_from_burnin(t_start, dp["burn_in_time"], dp["duration"])
 
     log.info("Starting data gathering run.")
     sim.run(dp["duration"], callbacks=callbacks)
@@ -235,7 +245,9 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.):
         })
 
     log.info("Burning in samplers for {} ms".format(burn_in_time))
+    t_start = time.time()
     sim.run(burn_in_time)
+    eta_from_burnin(t_start, burn_in_time, duration)
 
     log.info("Starting data gathering run.")
     sim.run(duration, callbacks=callbacks)
