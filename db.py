@@ -74,9 +74,16 @@ def purge_incomplete_calibrations():
         environment!
     """
 
-    dq = filter_incomplete_calibrations(Calibration.delete())
+    dq = filter_incomplete_calibrations(Calibration.select())
 
-    num_deleted = dq.execute()
+    to_delete = dq.execute()
+    # we delete them by hand so that corresponding storage gets deleted as well
+    # for larger applications this would be very inefficient
+    num_deleted = 0
+    for instance in to_delete:
+        instance.delete_instance()
+        num_deleted += 1
+
     log.info("Purged {} partial calibration{}..".format(num_deleted,
         "s" if num_deleted > 1 else ""))
 
@@ -90,6 +97,8 @@ def get_incomplete_calibration_ids():
 
 
 
+# NOTE: Only ever delete instances with `delete_instance` instead of a delete
+# query.
 class BaseModel(pw.Model):
     """
         The base model that sets the database.
@@ -103,7 +112,7 @@ class BaseModel(pw.Model):
         """
         filter_func = lambda k: not k.endswith("_sha1") and k != "date"\
                 and isinstance(getattr(self.__class__, k, None), pw.Field)
-        field_names = filter(filter_func, vars(self)).keys()\
+        field_names = filter(filter_func, dir(self))\
                 + getattr(self.__class__, "_storage_fields")
         return {k: getattr(self, k) for k in field_names\
                 if getattr(self, k) is not None}
@@ -213,7 +222,7 @@ class Calibration(BaseModel):
         # delete any sources previously linked to this node
         # node we do allow sources to be specified again
 
-        dq = SourceCFGInCalibration.delete().where(
+        dq = SourceCFGInCalibration.select().where(
                 SourceCFGInCalibration.calibration==self)
 
         num_deleted = dq.execute()
@@ -222,6 +231,11 @@ class Calibration(BaseModel):
 
         for src in sources:
             SourceCFGInCalibration.create(source=src, calibration=self)
+
+    @property
+    def is_complete(self):
+        return self.alpha is not None\
+            and self.v_p05 is not None
 
     class Meta:
         order_by = ("-date",)
@@ -352,7 +366,7 @@ def merge_databases(db_name_source, db_name_target):
 
         # get all original fields
         model_fields = []
-        for a in vars(model).keys():
+        for a in dir(model):
             # we dont want to sync dates
             if a == "date":
                 continue
@@ -394,7 +408,7 @@ def merge_databases(db_name_source, db_name_target):
         storage_fields = getattr(model, "_storage_fields", tuple())
 
         # we need to update ForeignKeys
-        fk_fields = [getattr(model, a) for a in vars(model).keys()
+        fk_fields = [getattr(model, a) for a in dir(model)
                 if isinstance(getattr(model, a), pw.ForeignKeyField)]
 
         for old_id, attributes in tmp_storage[model_name].iteritems():

@@ -23,6 +23,36 @@ from . import comm
 from .logcfg import log
 from . import buildingblocks as bb
 from . import utils
+from .comm import RunInSubprocess
+from . import db
+
+
+class RunInSubprocessWithDatabase(RunInSubprocess):
+    """
+        Send current database information along to the subprocess.
+
+        (So that reading from database works in subprocess.)
+    """
+    def _send_arguments(self, socket, args, kwargs):
+        socket.send_json({"current_basename" : db.current_basename})
+
+        # receive the ACK before we pickle and unpickle with db connection
+        ack = socket.recv()
+        assert ack == "ACK"
+
+        return super(RunInSubprocessWithDatabase, self)\
+                ._send_arguments(socket, args, kwargs)
+
+    def _recv_arguments(self, socket):
+        assert db.current_basename is None
+
+        db_data = socket.recv_json()
+        current_basename = db_data["current_basename"]
+        db.setup(current_basename)
+        socket.send("ACK")
+
+        return super(RunInSubprocessWithDatabase, self)\
+                ._recv_arguments(socket)
 
 
 # make a log function with ETA
@@ -59,7 +89,7 @@ def get_callbacks(sim, log_time_params):
 # SAMPLER HELPER FUNCTIONS #
 ############################
 
-@comm.RunInSubprocess
+# @comm.RunInSubprocess
 def gather_calibration_data(sim_name, calib_cfg, pynn_model,
         neuron_params, sources_cfg):
     """
@@ -184,8 +214,8 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-@comm.RunInSubprocess
-def gather_network_spikes(network, duration, dt=0.1):
+@RunInSubprocessWithDatabase
+def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.):
 
     exec "import {} as sim".format(network.sim_name) in globals(), locals()
 
@@ -199,15 +229,34 @@ def gather_network_spikes(network, duration, dt=0.1):
         for pop in population:
             pop.record("spikes")
 
+    callbacks = get_callbacks(sim, {
+            "duration" : duration,
+            "offset" : burn_in_time,
+        })
+
+    log.info("Burning in samplers for {} ms".format(burn_in_time))
+    sim.run(burn_in_time)
+
+    log.info("Starting data gathering run.")
+    sim.run(duration, callbacks=callbacks)
+
     if isinstance(population, sim.Population):
-        spiketrains = np.array(
-                population.get_data("spikes").segments[0].spiketrains)
+        spiketrains = population.get_data("spikes").segments[0].spiketrains
     else:
         spiketrains = np.vstack(
                 [pop.get_data("spikes").segments[0].spiketrains[0]
                 for pop in population])
 
-    return spiketrains
+    # we need to ignore the burn in time
+    clean_spiketrains = []
+    for st in spiketrains:
+        clean_spiketrains.append(np.array(st[st > burn_in_time])-burn_in_time)
 
+    return_data = {
+            "spiketrains" : clean_spiketrains,
+            "duration" : duration,
+        }
+
+    return return_data
 
 

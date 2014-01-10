@@ -6,6 +6,7 @@ import pylab as p
 import h5py
 import functools as ft
 import peewee as pw
+import logging
 
 from . import utils
 from .logcfg import log
@@ -20,6 +21,11 @@ def create_dataset_compressed(h5grp, *args, **kwargs):
     dataset = h5grp.create_dataset(*args, **kwargs)
     h5grp.file.flush() # sync file to avoid corruption
     return dataset
+
+def delete_dataset(h5grp, name):
+    h5file = h5grp.file
+    del h5grp[name]
+    h5file.flush()
 
 
 def ensure_group_exists(h5grp, name):
@@ -65,7 +71,7 @@ class StorageFields(pw.BaseModel):
         that there is an indication when storage contents change (e.g. this is
         used to distinguish sources with different spike times).
     """
-    def __new__(cls, name, bases, dcts):
+    def __new__(mcs, name, bases, dcts):
         storage_fields = dcts.get("_storage_fields", tuple())
 
         def get_storage_group(self):
@@ -81,7 +87,116 @@ class StorageFields(pw.BaseModel):
             dcts[field] = property(getter, setter)
             dcts[field + "_sha1"] = pw.CharField(null=True, max_length=40)
 
-        return super(StorageFields, cls).__new__(cls, name, bases, dcts)
+        cls = super(StorageFields, mcs).__new__(mcs, name, bases, dcts)
+
+        # we need to overwrite the delete_instance method
+        def delete_instance(self):
+            h5grp = self.get_storage_group()
+            for sf in storage_fields:
+                delete_dataset(h5grp, sf)
+
+            return super(cls, self).delete_instance()
+
+        setattr(cls, "delete_instance", delete_instance)
+        return cls
+
+
+class DependsOn(object):
+    """
+        Descriptor dealing with dependencies to other values.
+
+        The function passed to the decorator should accept one argument (self)
+        for computing nodes that update their value when their dependencies
+        change and two arguments (self, value) for nodes that get set.
+    """
+
+    def __init__(self, *dependencies):
+        if dependencies is None:
+            dependencies = []
+
+        # the names of variables we dependend on
+        self._dependencies = dependencies
+        # set of all variables that need to be updated if we are updated
+        self._influences = []
+
+        # dependencies will be propagated the first time a descriptor function
+        # is accessed
+        self._propagated_dependencies = False
+
+        self._func = None
+        self.value_name = "_unnamed"
+        self.attr_name = "unamed"
+
+    def __call__(self, func):
+        self.attr_name = func.func_name
+        self.value_name = "_" + self.attr_name
+        self._func = func
+        self.__doc__ = func.func_doc
+        return self
+
+    def __get__(self, instance, owner):
+        log.debug("Getting {}.".format(self.attr_name))
+
+        if self.needs_update(instance):
+            if log.getEffectiveLevel() <= logging.DEBUG:
+                log.debug("{} needs update.".format(self.attr_name))
+            setattr(instance, self.value_name, self._func(instance))
+
+        return getattr(instance, self.value_name)
+
+    def __set__(self, instance, value):
+        self._propagate_dependencies(type(instance))
+        self.wipe(instance)
+        log.debug("Setting {}.".format(self.attr_name))
+        setattr(instance, self.value_name, self._func(instance, value))
+
+    def _propagate_dependencies(self, klass):
+        if self._propagated_dependencies:
+            return
+        log.debug("Propagating dependencies for {}.".format(self.attr_name))
+        for dep in self._dependencies:
+            klass.__dict__[dep]._influences.append(self)
+        self._propagated_dependencies = True
+
+    def wipe(self, instance):
+        """
+            Mark the values in instances as invalid/wipe them.
+        """
+        if self.needs_update(instance):
+            # we have already wiped this instance
+            return
+        log.debug("Wiping {}.".format(self.attr_name))
+        setattr(instance, self.value_name, None)
+        for influence in self._influences:
+            influence.wipe(instance)
+
+    def needs_update(self, instance):
+        return getattr(instance, self.value_name, None) is None
+
+
+def HasDependencies(klass):
+    """
+        Decorator that is needed for dependency relations to be maintained.
+    """
+    for attr in vars(klass).itervalues():
+        if isinstance(attr, DependsOn):
+            attr._propagate_dependencies(klass)
+
+    # add wipe function
+    def wipe(self, name):
+        descriptor = self.__class__.__dict__.get(name, None)
+
+        assert descriptor is not None, "{} not found".format(name)
+        assert isinstance(descriptor, DependsOn),\
+                "{} is no dependency type".format(name)
+
+        descriptor.wipe(self)
+
+    setattr(klass, "wipe", wipe)
+
+    return klass
+
+
 
 
 def plot_function(plotname):

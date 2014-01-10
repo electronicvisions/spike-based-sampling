@@ -134,7 +134,7 @@ class LIFsampler(object):
 
     @property
     def alpha_fitted(self):
-        assert(self.is_calibrated)
+        assert(self.is_completely_calibrated)
         return self.db_calibration.alpha
 
     @property
@@ -152,6 +152,10 @@ class LIFsampler(object):
         return self.db_calibration is not None
 
     @property
+    def is_completely_calibrated(self):
+        return self.is_calibrated and self.db_calibration.is_complete
+
+    @property
     def pynn_model(self):
         return self.db_params.pynn_model
 
@@ -159,15 +163,20 @@ class LIFsampler(object):
     def has_vmem_dist(self):
         return self.db_vmem_dist is not None
 
-    def get_pynn_parameters(self):
+    def get_pynn_parameters(self, adjust_vrest=True):
         """
             Returns dictionary with all needed pynn parameters to implement
             the sampler. Note: The resting potential will be set according to
             the specified bias.
+
+            `adjust_vrest` can be set to False to maintain the original rest
+            value. This is only really useful during calibration as there are
+            not values yet with which to update.
         """
         assert(self.is_calibrated)
         params = self.db_params.get_pynn_parameters()
-        params["v_rest"] = self.get_v_rest_from_bias()
+        if adjust_vrest:
+            params["v_rest"] = self.get_v_rest_from_bias()
         return params
 
     def get_parameters_id(self):
@@ -271,6 +280,7 @@ class LIFsampler(object):
         log.info("Vmem distribution with id {} loaded.".format(
             self.db_vmem_dist.id))
         return True
+
     def set_source_cfg(self,
             weights_exc, weights_inh,
             rates_exc, rates_inh):
@@ -298,9 +308,10 @@ class LIFsampler(object):
 
         calibration_params["simulator"] = self.sim_name
         calibration_params["used_parameters"] = self.db_params
-        self.db_calibration = db.Calibration(**calibration_params)
 
         # sync to db because the gathering function writes to it
+
+        self.db_calibration = db.Calibration(**calibration_params)
 
         self._calc_distribution_theo()
         self._estimate_alpha()
@@ -382,7 +393,7 @@ class LIFsampler(object):
     def get_vmem_dist_theo(self):
         dist = getattr(utils, "{}_distribution".format(self.pynn_model))
         args = self.get_all_source_parameters()
-        if not self.is_calibrated:
+        if not self.is_completely_calibrated:
             log.info("Computing vmem distribution ONLY from supplied neuron "
                      "parameters!")
             kwargs = self.db_params.get_pynn_parameters()
@@ -391,7 +402,7 @@ class LIFsampler(object):
                 self.bias_theo))
             kwargs = self.get_pynn_parameters()
 
-        # gl is not a pynn parameter
+        # g_l is not a pynn parameter
         kwargs["g_l"] = self.db_params.g_l
 
         return dist(*args, **kwargs)
@@ -420,7 +431,7 @@ class LIFsampler(object):
                 self.db_params.tau_syn_E,
             ])
 
-        g_tot = self.db_params.g_tot
+        g_tot = self.db_calibration.g_tot
         cm = self.db_params.cm
 
         if self.pynn_model == "IF_cond_exp":
@@ -437,7 +448,7 @@ class LIFsampler(object):
                         + tau[is_exc_int] * (np.exp(-1.) - 1.)\
                     )\
                 )\
-                *self.alpha_fitted*self.db_params.gl/self.db_calibration.g_tot
+                *self.alpha_fitted*self.db_params.g_l/self.db_calibration.g_tot
 
         elif self.pynn_model == "IF_curr_exp":
             nnweights = weights /\
@@ -487,7 +498,7 @@ class LIFsampler(object):
                 (cm - g_tot * tau[is_exc_int]) *\
                 (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
                     + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                ) / self.alpha_fitted * g_tot / self.db_params.gl 
+                ) / self.alpha_fitted * g_tot / self.db_params.g_l 
         elif self.pynn_model == "IF_curr_exp":
             theo_weights = weights / (cm - g_tot * tau[is_exc_int]) *\
                 (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
@@ -524,7 +535,7 @@ class LIFsampler(object):
                     getattr(self.sim, self.db_params.pynn_model)())
 
         # get all parameters needed for instance
-        params = self.get_parameters()
+        params = self.get_pynn_parameters()
 
         self.population.set(**params)
 
@@ -532,7 +543,7 @@ class LIFsampler(object):
             assert duration is not None, "Instructed to create sources "\
                     "without duration!"
             sources_cfg = self.get_sources_cfg_lod()
-            self.sources = bb.create_sources(sim, sources_cfg)
+            self.sources = bb.create_sources(sim, sources_cfg, duration)
             self.source_projections = bb.connect_sources(sim, sources_cfg,
                     self.sources, self.population)
 

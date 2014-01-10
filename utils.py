@@ -7,6 +7,14 @@ import string
 import hashlib
 import collections as c
 import time
+import logging
+from pprint import pformat as pf
+import gzip
+import os.path as osp
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
 from .logcfg import log
 
@@ -170,6 +178,8 @@ def fill_diagonal(array, value=0):
 
     array[indices] = value
 
+    return array
+
 
 def get_random_string(n=32, letters=string.ascii_letters):
     return "".join((letters[i] for i in np.random.randint(len(letters),
@@ -216,4 +226,58 @@ def get_eta(t_start, current, total):
         return t_elapsed / current * (total - current)
     else:
         return "N/A"
+
+def save_pickle(obj, filename, force_extention=False, compresslevel=9):
+    """
+        Save object in compressed pickle filename.
+
+        By default the extension of the filename will always be replaced by
+        "pkl.gz".
+    """
+
+    if not force_extention:
+        filename = filename.split(osp.extsep)[0] + ".pkl.gz"
+
+    with gzip.open(filename, "wb", compresslevel=compresslevel) as f:
+        pickle.dump(obj, f, protocol=-1)
+
+def load_pickle(filename, force_extension=False):
+    """
+        Load pickle object from file, if `force_extension` is True, the
+        extension will NOT be changed to ".pkl.gz".
+    """
+    if not force_extension:
+        filename = filename.split(osp.extsep)[0] + ".pkl.gz"
+
+    if filename.split(osp.extsep)[-1] == "gz":
+        file_opener = gzip.open
+    else:
+        file_opener = open
+
+    with file_opener(filename) as f:
+        return pickle.load(f)
+
+def get_ordered_spike_idx(spiketrains):
+    """
+        Take spike trains and return a (num_spikes,) record array that contains
+        the spike ids ('id') on first and the spike times ('t') on second
+        position. The spike times are sorted in ascending order.
+    """
+    num_spikes = sum((len(st) for st in spiketrains))
+    spikes = np.zeros((num_spikes,), dtype=[("id", int), ("t", float)])
+
+    current = 0 
+
+    for i,st in enumerate(spiketrains):
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.debug("Raw spikes for #{}: {}".format(i, pf(st)))
+        spikes["id"][current:current+len(st)] = i
+        spikes["t"][current:current+len(st)] = np.array(st)
+
+        current += len(st)
+
+    sort_idx = np.argsort(spikes["t"])
+    sorted_spikes = spikes[sort_idx].copy()
+
+    return sorted_spikes
 
