@@ -12,8 +12,10 @@ from .logcfg import log
 from . import db
 from . import samplers
 from . import utils
+from . import cutils
 from . import gather_data
 from . import meta
+from . import buildingblocks as bb
 
 class Distribution(object):
     """
@@ -70,7 +72,7 @@ class Distribution(object):
         """
         raise NotImplementedError
 
-    def all_probabilities(self):
+    def all_probs(self):
         """
             Return all probabilities in a flattened manner (same order as
             states).
@@ -81,7 +83,7 @@ class Distribution(object):
         """
             Return an iterator over all state/probability pairs.
         """
-        return it.izip(self.all_states(), self.all_probabilities())
+        return it.izip(self.all_states(), self.all_probs())
 
     def normalize(self, total=None):
         """
@@ -111,7 +113,7 @@ class CompleteDistribution(Distribution):
     def all_states(self):
         return np.ndindex(*self.probs._probs.shape)
 
-    def all_probabilities(self):
+    def all_probs(self):
         return self.probs._probs.flatten()
 
 
@@ -188,7 +190,7 @@ class ExclusiveDistribution(Distribution):
         yield (0,) * num_samplers
 
 
-    def all_probabilities(self):
+    def all_probs(self):
         return self.probs._probs.flatten()
 
 
@@ -273,6 +275,9 @@ class BoltzmannMachine(object):
 
         self.delays = 0.1
         self.sampler_idx = range(self.num_samplers)
+
+        self.population = None
+        self.projections = None
 
     ########################
     # pickle serialization #
@@ -461,7 +466,7 @@ class BoltzmannMachine(object):
             else:
                 id = None
             if not sampler.load_calibration(id=id):
-                failed.append(samper.db_params.id)
+                failed.append(sampler.db_params.id)
 
         return failed
 
@@ -500,14 +505,23 @@ class BoltzmannMachine(object):
         return utils.get_ordered_spike_idx(self.spike_data["spiketrains"])
 
     def save_spikes(self, filename):
-        utils.save_pickle(self.spike_data, filename)
+
+        save_data = {
+                "spike_data" : self.spike_data,
+                "weights" : self.weights_theo,
+                "biases" : self.biases_theo,
+            }
+        utils.save_pickle(save_data, filename)
 
     def load_spikes(self, filename):
         """
             Returns True if successfully loaded, False otherwise.
         """
         try:
-            self.spike_data = utils.load_pickle(filename)
+            save_data = utils.load_pickle(filename)
+            self.spike_data  = save_data["spike_data"]
+            self.weights_theo = save_data["weights"]
+            self.biases_theo = save_data["biases"]
             return True
         except:
             if log.getEffectiveLevel() <= logging.DEBUG:
@@ -644,7 +658,16 @@ class BoltzmannMachine(object):
         """
             Marginal distribution
         """
-        return self.get_dist_marginal_from_joint(self.dist_joint_theo)
+        sampler_idx = list(self.sampler_idx)
+        lc_biases = self.biases_theo[sampler_idx]
+        lc_weights = self.weights_theo[sampler_idx][:, sampler_idx]
+
+        lc_biases = np.require(lc_biases, requirements=["C"])
+        lc_weights = np.require(lc_weights, requirements=["C"])
+
+        return cutils.get_marginal(lc_weights, lc_biases)
+        # return self.get_dist_marginal_from_joint(self.dist_joint_theo)
+
 
     @classmethod
     def get_dist_joint_theo(cls, dist, weights, biases):
@@ -657,14 +680,15 @@ class BoltzmannMachine(object):
         sampler_idx = list(dist.sampler_idx)
         lc_biases = biases[sampler_idx]
         lc_weights = utils.fill_diagonal(weights[sampler_idx][:, sampler_idx],
-                value=lc_biases)
+                value=0.)
 
         log.info("Biases: \n" + pf(lc_biases))
         log.info("Weights: \n" + pf(lc_weights))
 
         for state in dist.all_states():
             arr_state = np.array(state)
-            prob = np.exp(arr_state.T.dot(lc_weights.dot(arr_state)))
+            prob = np.exp(.5*arr_state.T.dot(lc_weights.dot(arr_state))\
+                    + lc_biases.dot(state))
             dist.probs[state] = prob
 
         dist.normalize()
@@ -692,12 +716,9 @@ class BoltzmannMachine(object):
     # PYNN methods #
     ################
 
-    def create(self, duration=None, population=None):
+    def create(self, duration, _nest_optimization=True):
         """
             Create the sampling network and return the pynn object.
-
-            If `duration` is None, the duration from the source configuration
-            used for calibration will be used.
 
             If population is not None it should have length `self.num_samplers`.
             Also, if you specify different samplers to have different
@@ -706,38 +727,38 @@ class BoltzmannMachine(object):
 
             Returns the newly created or specified popluation object for the
             samplers.
-            If `populations` was None
+
+            `_nest_optimization`: If True the network will try to use as few
+            sources as possible with the nest specific `poisson_generator` type.
+            For the coder's sanity
         """
         exec "import {} as sim".format(self.sim_name) in globals(), locals()
 
-        all_samplers_same_model = self.all_samplers_same_model()
 
-        if population is None and not all_samplers_same_model:
-            log.warn("The samplers have different pynn_models. "
-            "Therefore there will be one population per sampler. "
-            "This is rather inefficient.")
+        assert self.all_samplers_same_model(),\
+                "The samplers have different pynn_models."
 
-        if population is None and all_samplers_same_model:
-            log.info("Setting up single population for all samplers.")
-            population = sim.Population(self.num_samplers,
-                    getattr(sim, self.samplers[0].pynn_model)())
+        # only perform nest optimizations when we have nest as simulator and
+        # the user requests it
+        _nest_optimization = _nest_optimization and hasattr(sim, "nest")
 
-        elif population is None:
-            population = []
+        log.info("Setting up population.")
+        population = sim.Population(self.num_samplers,
+                getattr(sim, self.samplers[0].pynn_model)())
 
         for i, sampler in enumerate(self.samplers):
-            if isinstance(population, sim.Population):
-                local_pop = population[i:i+1]
-            elif len(population) > i:
-                local_pop = population[i]
-            else:
-                local_pop = None
+            local_pop = population[i:i+1]
 
-            retval = sampler.create(duration=duration, population=local_pop)
+            # if we are performing nest optimizations, the sources will be
+            # created afterwards
+            sampler.create(duration=duration, population=local_pop,
+                    create_pynn_sources=not _nest_optimization)
 
-            # if every sampler creates its own object we need to keep track
-            if local_pop is None:
-                population.append(retval)
+        if _nest_optimization:
+            # make sure the objects returned are referenced somewhere
+            self._nest_sources, self._nest_projections =\
+                    bb.create_nest_optimized_sources(
+                    sim, self.samplers, population, duration)
 
         # we dont set any connections for weights that are == 0.
         weight_is = {}
@@ -746,7 +767,7 @@ class BoltzmannMachine(object):
 
         receptor_type = {"exc" : "excitatory", "inh" : "inhibitory"}
 
-        global_delay = len(self.delays.shape) > 0
+        global_delay = len(self.delays.shape) == 0
 
         self.projections = {}
         for wt in ["exc", "inh"]:
@@ -761,18 +782,32 @@ class BoltzmannMachine(object):
             else:
                 delays = self.delays[weight_is[wt]]
 
-            weights = utils.fill_diagonal(self.weights_bio.copy(), value=0)
-            weights[np.logical_not(weight_is[wt])] = np.NaN
+            weights = self.weights_bio.copy()
+            # weights[np.logical_not(weight_is[wt])] = np.NaN
 
             if wt == "inh":
                 weights = weights.copy() * -1
 
+            # Not sure that array connector does what we want
+            # self.projections[wt] = sim.Projection(population, population,
+                    # connector=sim.ArrayConnector(weight_is[wt]),
+                    # synapse_type=sim.StaticSynapse(
+                        # weight=weights, delay=delays),
+                    # receptor_type=receptor_type[wt])
+
+            connection_list = []
+            for i_pre, i_post in it.izip(*np.nonzero(weight_is[wt])):
+                connection_list.append(
+                        (i_pre, i_post, weights[i_pre, i_post], self.delays\
+                            if global_delay else self.delays[i_pre, i_post])
+                    )
+
             self.projections[wt] = sim.Projection(population, population,
-                    connector=sim.ArrayConnector(weight_is[wt]),
-                    synapse_type=sim.StaticSynapse(
-                        weight=weights, delay=delays),
+                    synapse_type=sim.StaticSynapse(),
+                    connector=sim.FromListConnector(
+                        connection_list,
+                        column_names=["weight", "delay"]),
                     receptor_type=receptor_type[wt])
-            self.projections[wt].set(delay=delays)
 
         self.population = population 
 

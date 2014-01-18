@@ -16,8 +16,29 @@ try:
 except ImportError:
     import pickle
 
+from . import cutils
+
 from .logcfg import log
 
+__all__ = [
+    "IF_cond_exp_distribution",
+    "IF_curr_exp_distribution",
+    "check_list_array",
+    "erfm",
+    "fill_diagonal",
+    "format_time",
+    "gauss",
+    "get_all_source_parameters",
+    "get_eta",
+    "get_ordered_spike_idx",
+    "get_random_string",
+    "get_sha1",
+    "get_time_tuple",
+    "load_pickle",
+    "save_pickle",
+    "sigmoid",
+    "sigmoid_trans",
+]
 
 def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
         e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm,
@@ -283,4 +304,14 @@ def get_ordered_spike_idx(spiketrains):
 
 def check_list_array(obj):
     return isinstance(obj, c.Sequence) or isinstance(obj, np.ndarray)
+
+
+def dkl(p, q):
+    """
+        Kullback-Leibler divergence
+    """
+    idx = (p > 0) * (q > 0)
+    p = p[idx]
+    q = q[idx]
+    return np.sum(p * np.log(p/q))
 

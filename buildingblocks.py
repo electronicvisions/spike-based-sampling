@@ -7,6 +7,8 @@ import functools as ft
 import itertools as it
 import numpy as np
 
+from pprint import pformat as pf
+
 
 def create_sources(sim, sources_cfg, duration):
     """
@@ -85,4 +87,90 @@ def connect_sources(sim, sources_cfg, sources, target):
     log.info("Sources -> target synapse count: {}".format(num_synapses))
 
     return projections
+
+
+def create_nest_optimized_sources(sim, samplers, population, duration):
+    """
+        Create the least number of poisson_generator type specific to python
+        and connecte them to the samplers.
+
+        Afterwards, all other sources are created with `create_sources` and
+        `connect_sources`.
+    """
+    log.info("Applying NEST-specific optimization in source creation.")
+    sources = {}
+    projections = {}
+    # _ps = _per_sampler
+    all_source_cfgs_ps = [sampler.get_sources_cfg_lod() for sampler in samplers]
+
+    # create poisson sources
+    has_no_spikes = lambda x: not x["has_spikes"]
+    poisson_cfgs_ps = [filter(has_no_spikes, srcs) for srcs in all_source_cfgs_ps]
+
+    num_poisson_ps = np.array([len(srcs) for srcs in poisson_cfgs_ps])
+
+    if num_poisson_ps.sum() > 0:
+
+        # we want a mapping from each samplers sources into a large flattened
+        # array
+        offset_ps = np.cumsum(num_poisson_ps) - num_poisson_ps[0]
+        rates = [src["rate"] for srcs in poisson_cfgs_ps for src in srcs]
+        rates = np.array(rates)
+
+        uniq_rates, idx_to_src_id = np.unique(rates, return_inverse=True)
+
+        log.info("Creating {} different poisson sources.".format(
+            uniq_rates.size))
+        poisson_gen_t = sim.native_cell_type('poisson_generator')
+        sources["poisson"] = sim.Population(uniq_rates.size,
+                poisson_gen_t(start=0., stop=duration))
+
+        sources["poisson"].set(rate=uniq_rates)
+
+        log.info("Connecting poisson sources to samplers.")
+        # manage which source is connected to what sampler
+        connections = {"exc": [], "inh": []}
+        conn_type = ["inh", "exc"]
+
+        for i, source_cfgs in enumerate(poisson_cfgs_ps):
+            for j, src_cfg in enumerate(source_cfgs):
+                connections[conn_type[src_cfg["is_exc"]]].append(
+                        (idx_to_src_id[offset_ps[i]+j], i, src_cfg["weight"]))
+
+        projections["poisson"] = poiss_proj = {}
+        for ct in conn_type:
+            poiss_proj[ct] = sim.Projection(
+                    sources["poisson"], population,
+                    receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
+                    synapse_type=sim.StaticSynapse(),
+                    connector=sim.FromListConnector(connections[ct],
+                        column_names=["weight"]))
+
+    # create the other sources
+    has_spikes = lambda x: x["has_spikes"]
+    array_cfgs_ps = [filter(has_spikes, srcs) for srcs in all_source_cfgs_ps]
+
+    num_array_ps = [len(srcs) for srcs in poisson_cfgs_ps]
+
+    if sum(num_array_ps) > 0:
+        log.info("Creating array sources for each sampler.")
+
+        sources["array_per_sampler"] = []
+        projections["array_per_sampler"] = []
+
+        for i, sources_cfg in enumerate(array_cfgs_ps):
+            if len(sources_cfg) > 0:
+                local_pop = population[i:i+1]
+                local_src = create_sources(sim, sources_cfg, duration)
+                local_proj = connect_sources(
+                        sim, sources_cfg, local_src, local_pop)
+
+            else:
+                local_src = {}
+                local_proj = {}
+
+            sources["array_per_sampler"].append(local_src)
+            projections["array_per_sampler"].append(local_proj)
+
+    return sources, projections
 
