@@ -204,7 +204,7 @@ def plot_function(plotname):
         Wraps a function so that it creates a figure and axes when it is not
         supplied with the kwargs fig/ax.
 
-        Note that fig/ax have to kwargs and not regular args.
+        Note that fig/ax have to be kwargs and not regular args.
 
         If no figure was supplied, the figure will be shown.
         If `save` was supplied, the figure will be saved instead as `plotname`

@@ -569,8 +569,8 @@ class LIFsampler(object):
     ##################
 
     @meta.plot_function("calibration")
-    def plot_calibration(self, fig, ax,
-            plot_v_dist_theo=False, plot_vlines=True):
+    def plot_calibration(self, plot_v_dist_theo=False, plot_vlines=True,
+            fig=None, ax=None):
         assert self.is_calibrated
 
         samples_v_rest = self.db_calibration.samples_v_rest
@@ -611,7 +611,7 @@ class LIFsampler(object):
         ax.legend(bbox_to_anchor=(0.35, 1.))
 
     @meta.plot_function("free_vmem_dist")
-    def plot_free_vmem(self, fig, ax, num_bins=200, plot_vlines=True):
+    def plot_free_vmem(self, num_bins=200, plot_vlines=True, fig=None, ax=None):
         assert self.has_vmem_dist
         assert self.is_calibrated
 

@@ -321,7 +321,7 @@ class BoltzmannMachine(object):
         """
         try:
             return utils.load_pickle(filename)
-        except:
+        except IOError:
             if log.getEffectiveLevel() <= logging.DEBUG:
                 log.debug(sys.exc_info()[0])
             return None
@@ -424,6 +424,76 @@ class BoltzmannMachine(object):
         joint = cutils.get_bm_joint_theo(lc_weights, lc_biases)
 
         return joint
+
+    ################
+    # PLOT methods #
+    ################
+
+    @meta.plot_function("comparison_dist_marginal")
+    def plot_dist_marginal(self, logscale=True, fig=None, ax=None):
+        width = 1./3.
+
+        idx = np.arange(self.dist_marginal_theo.size, dtype=np.int)
+
+        if logscale:
+            ax.set_yscale("log")
+            min_val = min(self.dist_marginal_theo.min(),
+                    self.dist_marginal_sim.min())
+
+            # find corresponding exponent
+            bottom = 10**np.floor(np.log10(min_val))
+        else:
+            bottom = 0.
+
+        ax.bar(idx, height=self.dist_marginal_theo.flatten(), width=width,
+                bottom=bottom,
+                color="r", edgecolor="None", label="marginal theo")
+
+        ax.bar(idx+width, height=self.dist_marginal_sim.flatten(), width=width,
+                bottom=bottom,
+                color="b", edgecolor="None", label="marginal sim")
+
+        ax.legend(loc="best")
+
+        ax.set_xlim(0, idx[-1]+2*width)
+
+        ax.set_xlabel("sampler index $i$")
+        ax.set_ylabel("$p_{ON}$(sampler $i$)")
+
+    @meta.plot_function("comparison_dist_joint")
+    def plot_dist_joint(self, logscale=True, fig=None, ax=None):
+        width = 1./3.
+
+        idx = np.arange(self.dist_joint_theo.size, dtype=np.int)
+
+        if logscale:
+            ax.set_yscale("log")
+            min_val = min(self.dist_joint_theo.min(),
+                    self.dist_joint_sim.min())
+
+            # find corresponding exponent
+            bottom = 10**np.floor(np.log10(min_val))
+        else:
+            bottom = 0.
+
+        ax.bar(idx, height=self.dist_joint_theo.flatten(), width=width,
+                bottom=bottom,
+                color="r", edgecolor="None", label="joint theo")
+
+        ax.bar(idx+width, height=self.dist_joint_sim.flatten(), width=width,
+                bottom=bottom,
+                color="b", edgecolor="None", label="joint sim")
+
+        ax.legend(loc="best")
+
+        ax.set_xlabel("state")
+        ax.set_ylabel("probability")
+
+        ax.set_xlim(0, idx[-1]+2*width)
+
+        ax.set_xticks(idx+width)
+        ax.set_xticklabels(labels=["\n".join(map(str, state))
+            for state in np.ndindex(*self.dist_joint_theo.shape)])
 
 
     ################
