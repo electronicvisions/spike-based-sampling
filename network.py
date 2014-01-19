@@ -98,7 +98,7 @@ class BoltzmannMachine(object):
         # biases are set to zero automaticcaly by the samplers
 
         self.delays = 0.1
-        self.sampler_idx = range(self.num_samplers)
+        self.selected_sampler_idx = range(self.num_samplers)
 
         self.population = None
         self.projections = None
@@ -123,7 +123,7 @@ class BoltzmannMachine(object):
 
         state["delays"] = self.delays
 
-        state["sampler_idx"] = self.sampler_idx
+        state["selected_sampler_idx"] = self.selected_sampler_idx
 
         state["sim_name"] = self.sim_name
         state["num_samplers"] = self.num_samplers
@@ -145,7 +145,7 @@ class BoltzmannMachine(object):
                 sim_name=state["sim_name"],
                 neuron_parameters_db_ids=state["params_ids"])
 
-        self.sampler_idx = state["sampler_idx"]
+        self.selected_sampler_idx = state["selected_sampler_idx"]
 
         for i, cid in enumerate(state["calibration_ids"]):
             if cid is not None:
@@ -356,20 +356,20 @@ class BoltzmannMachine(object):
         return utils.get_ordered_spike_idx(self.spike_data["spiketrains"])
 
     @meta.DependsOn()
-    def sampler_idx(self, sampler_idx):
-        return np.array(list(set(sampler_idx)), dtype=np.int)
+    def selected_sampler_idx(self, selected_sampler_idx):
+        return np.array(list(set(selected_sampler_idx)), dtype=np.int)
 
-    @meta.DependsOn("spike_data", "sampler_idx")
+    @meta.DependsOn("spike_data", "selected_sampler_idx")
     def dist_marginal_sim(self):
         """
             Marginal distribution computed from spike data.
         """
         log.info("Calculating marginal probability distribution for {} "
-                "samplers.".format(len(self.sampler_idx)))
+                "samplers.".format(len(self.selected_sampler_idx)))
 
-        marginals = np.zeros((len(self.sampler_idx),))
+        marginals = np.zeros((len(self.selected_sampler_idx),))
 
-        for i in self.sampler_idx:
+        for i in self.selected_sampler_idx:
             sampler = self.samplers[i]
             spikes = self.spike_data["spiketrains"][i]
             marginals[i] = len(spikes) * sampler.db_params.tau_refrac
@@ -378,26 +378,27 @@ class BoltzmannMachine(object):
 
         return marginals
 
-    @meta.DependsOn("spike_data", "sampler_idx")
+    @meta.DependsOn("spike_data", "selected_sampler_idx")
     def dist_joint_sim(self):
         # tau_refrac per selected sampler
         tau_refrac_pss = np.array([self.samplers[i].db_params.tau_refrac
-                for i in self.sampler_idx])
+                for i in self.selected_sampler_idx])
 
         spike_ids = np.require(self.ordered_spikes["id"], requirements=["C"])
         spike_times = np.require(self.ordered_spikes["t"], requirements=["C"])
 
         return cutils.get_bm_joint_sim(spike_ids, spike_times,
-                self.sampler_idx, tau_refrac_pss, self.spike_data["duration"])
+                self.selected_sampler_idx, tau_refrac_pss,
+                self.spike_data["duration"])
 
-    @meta.DependsOn("sampler_idx", "biases_theo", "weights_theo")
+    @meta.DependsOn("selected_sampler_idx", "biases_theo", "weights_theo")
     def dist_marginal_theo(self):
         """
             Marginal distribution
         """
-        sampler_idx = list(self.sampler_idx)
-        lc_biases = self.biases_theo[sampler_idx]
-        lc_weights = self.weights_theo[sampler_idx][:, sampler_idx]
+        ssi = self.selected_sampler_idx
+        lc_biases = self.biases_theo[ssi]
+        lc_weights = self.weights_theo[ssi][:, ssi]
 
         lc_biases = np.require(lc_biases, requirements=["C"])
         lc_weights = np.require(lc_weights, requirements=["C"])
@@ -405,15 +406,17 @@ class BoltzmannMachine(object):
         return cutils.get_bm_marginal_theo(lc_weights, lc_biases)
         # return self.get_dist_marginal_from_joint(self.dist_joint_theo)
 
-    @meta.DependsOn("sampler_idx", "biases_theo", "weights_theo")
+    @meta.DependsOn("selected_sampler_idx", "biases_theo", "weights_theo")
     def dist_joint_theo(self):
         """
             Joint distribution for all selected samplers.
         """
         log.info("Calculating joint theoretical distribution for {} samplers."\
-                .format(len(self.sampler_idx)))
-        lc_biases = self.biases_theo[self.sampler_idx]
-        lc_weights = self.weights_theo[self.sampler_idx][:, self.sampler_idx]
+                .format(len(self.selected_sampler_idx)))
+
+        ssi = self.selected_sampler_idx
+        lc_biases = self.biases_theo[ssi]
+        lc_weights = self.weights_theo[ssi][:, ssi]
 
         lc_biases = np.require(lc_biases, requirements=["C"])
         lc_weights = np.require(lc_weights, requirements=["C"])
