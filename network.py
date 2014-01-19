@@ -22,9 +22,6 @@ from . import buildingblocks as bb
 class BoltzmannMachine(object):
     """
         A set of samplers connected as Boltzmann machine.
-
-        NOTE: The state notation is like read like a binary number, that means
-        that the state of sampler 0 is the right most (or last) one.
     """
 
     def __init__(self, num_samplers, sim_name="pyNN.nest",
@@ -120,18 +117,9 @@ class BoltzmannMachine(object):
                     for sampler in self.samplers],
                 "current_basename" : db.current_basename,
             }
-        # avoid unnecessary conversions for weights
-        for wt in ["theo", "bio"]: # weight type
-            weights = getattr(self, "_weights_{}".format(wt), None)
-            if weights is not None:
-                state["weights"] = {"type": wt, "value": weights}
+        state["weights"] = self.weights_theo
 
-        # biases are not as important so we just save the same as the weights
-        # ones (we assume that the user will almost never mix bio and
-        # theoretical biases/weights and if he does the precision/performance
-        # difference is acceptable)
-        state["biases"] = getattr(sampler,
-                "bias_{}".format(state["weights"]["type"]))
+        state["biases"] = self.biases_theo
 
         state["delays"] = self.delays
 
@@ -163,15 +151,8 @@ class BoltzmannMachine(object):
             if cid is not None:
                 self.samplers[i].load_calibration(id=cid)
 
-        # set the biases
-        bias_type = "bias_{}".format(state["weights"]["type"])
-        for i, sampler in enumerate(self.samplers):
-            setattr(self.samplers[i], bias_type,
-                    state["weights"]["value"][i, i])
-
-        # restore whatever weight type we saved
-        setattr(self, "weights_{}".format(state["weights"]["type"]),
-                state["weights"]["value"])
+        self.weights_theo = state["weights"]
+        self.biases_theo = state["biases"]
 
         self.delays = state["delays"]
         self.spike_data = state["spike_data"]

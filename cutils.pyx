@@ -73,8 +73,8 @@ cdef inline bool advance_state(
     cdef long carry = 0
     cdef long add = 1
 
-    cdef uint i
-    for i in range(num_dims):
+    cdef long i
+    for i in range(num_dims-1, -1, -1):
         if num_fixed > 0 and check_value_in_uint_array(i, num_fixed, fixed):
             continue
 
@@ -209,7 +209,7 @@ cdef inline uint get_current_state(uint num_selected, double* tau_sampler_ptr):
 
     for i in range(num_selected):
         if tau_sampler_ptr[i] > 0.:
-            current_state += (1 << i)
+            current_state += (1 << (num_selected - 1 - i))
 
     return current_state
 
@@ -259,8 +259,9 @@ def get_bm_joint_sim(
         # find next activation
         next_inactivation = np.inf
         for i in range(num_selected):
-            if tau_sampler_ptr[i] > 0. and tau_sampler_ptr[i] < next_activation:
-                next_activation = tau_sampler_ptr[i]
+            if tau_sampler_ptr[i] > 0.\
+                    and tau_sampler_ptr[i] < next_inactivation:
+                next_inactivation = tau_sampler_ptr[i]
 
         if i_spike < num_spikes:
             next_spike = spike_times[i_spike] - current_time
@@ -303,6 +304,11 @@ def get_bm_joint_sim(
                 i_spike += 1
 
         current_time += time_step
+        # print "tau",
+        # for i in range(num_selected):
+            # print tau_sampler_ptr[i],
+        # print ""
+
 
     joints /= duration
     return joints.reshape([2 for i in range(num_selected)])

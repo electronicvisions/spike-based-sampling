@@ -7,6 +7,7 @@ import string
 import hashlib
 import collections as c
 import time
+import itertools as it
 import logging
 from pprint import pformat as pf
 import gzip
@@ -314,4 +315,18 @@ def dkl(p, q):
     p = p[idx]
     q = q[idx]
     return np.sum(p * np.log(p/q))
+
+
+def dkl_sum_marginals(ps, qs):
+    """
+        Compute the marginal for each pair of p's and q's and sum the resulting
+        DKLs.
+
+        Note that the p' s only consist of a single state (the other will be
+        calculated).
+    """
+    dkl = 0.
+    for p, q in it.izip(ps, qs):
+        dkl += p * np.log(p/q) + (1. - p) * np.log((1.-p)/(1.-q))
+    return dkl
 
