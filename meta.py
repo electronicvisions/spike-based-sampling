@@ -108,6 +108,9 @@ class DependsOn(object):
         The function passed to the decorator should accept one argument (self)
         for computing nodes that update their value when their dependencies
         change and two arguments (self, value) for nodes that get set.
+
+        NOTE: When this descriptor is used, the corresponding class needs to be
+        decorated with the HasDependencies-decorator.
     """
 
     def __init__(self, *dependencies):
