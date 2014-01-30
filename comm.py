@@ -315,6 +315,7 @@ class RunInSubprocess(object):
         log.debug("Setting up script file.")
         filename = "/dev/shm/{}_{}.py".format(self._func_module.split(".")[0],
                 utils.get_random_string())
+        log.debug("Script filename {}.".format(filename))
         script = open(filename, "w")
 
         # write preamble

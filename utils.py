@@ -11,6 +11,8 @@ import itertools as it
 import logging
 from pprint import pformat as pf
 import gzip
+import struct
+import os
 import os.path as osp
 try:
     import cPickle as pickle
@@ -203,9 +205,17 @@ def fill_diagonal(array, value=0):
     return array
 
 
+def get_urandom_num(n=1, BYTE_LEN=8):
+    rand_bytes = os.urandom(BYTE_LEN*n)
+
+    return [struct.unpack("L", rand_bytes[i*BYTE_LEN:(i+1)*BYTE_LEN])[0]
+            for i in xrange(n)]
+
+
 def get_random_string(n=32, letters=string.ascii_letters):
-    return "".join((letters[i] for i in np.random.randint(len(letters),
-        size=n)))
+    nums = get_urandom_num(n)
+    log.debug("Random number {}".format(nums))
+    return "".join((letters[i % len(letters)] for i in nums))
 
 
 def get_sha1(array):
