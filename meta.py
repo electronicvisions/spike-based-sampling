@@ -149,7 +149,7 @@ class DependsOn(object):
 
     def __set__(self, instance, value):
         self._propagate_dependencies(type(instance))
-        self.wipe(instance)
+        self.wipe(instance, force=True)
         log.debug("Setting {}.".format(self.attr_name))
         setattr(instance, self.value_name, self._func(instance, value))
 
@@ -158,14 +158,15 @@ class DependsOn(object):
             return
         log.debug("Propagating dependencies for {}.".format(self.attr_name))
         for dep in self._dependencies:
+            log.debug("{} <- {}".format(self.attr_name, dep))
             klass.__dict__[dep]._influences.append(self)
         self._propagated_dependencies = True
 
-    def wipe(self, instance):
+    def wipe(self, instance, force=False):
         """
             Mark the values in instances as invalid/wipe them.
         """
-        if self.needs_update(instance):
+        if self.needs_update(instance) and not force:
             # we have already wiped this instance
             return
         log.debug("Wiping {}.".format(self.attr_name))
