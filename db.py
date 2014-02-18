@@ -85,7 +85,7 @@ def purge_incomplete_calibrations():
         num_deleted += 1
 
     log.info("Purged {} partial calibration{}..".format(num_deleted,
-        "s" if num_deleted > 1 else ""))
+        "s" if num_deleted != 1 else ""))
 
 
 def get_incomplete_calibration_ids():

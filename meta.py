@@ -203,7 +203,7 @@ def HasDependencies(klass):
 
 
 
-def plot_function(plotname):
+def plot_function(plotname, dpi=300):
     """
         Wraps a function so that it creates a figure and axes when it is not
         supplied with the kwargs fig/ax.
@@ -249,7 +249,7 @@ def plot_function(plotname):
             if show:
                 kwargs["fig"].show()
             if save:
-                kwargs["fig"].savefig(local_plotname)
+                kwargs["fig"].savefig(local_plotname, dpi=dpi)
 
             return returnval
 

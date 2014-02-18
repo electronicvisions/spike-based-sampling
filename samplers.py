@@ -11,6 +11,8 @@ from . import buildingblocks as bb
 import itertools as it
 import numpy as np
 
+
+@meta.HasDependencies
 class LIFsampler(object):
 
     supported_pynn_neuron_models = ["IF_curr_exp", "IF_cond_exp"]
@@ -77,8 +79,8 @@ class LIFsampler(object):
     # implement bias_bio and bias_theo as properties so
     # the user can assign either and query the other automatically
     # (once the sampler is calibrated)
-    @property
-    def bias_theo(self):
+    @meta.DependsOn("bias_bio")
+    def bias_theo(self, value=None):
         """
             Get or set the bias in theoretical units.
 
@@ -87,16 +89,16 @@ class LIFsampler(object):
             units both can be retrieved and the conversion will be done when
             needed.
         """
-        if not self.bias_is_theo:
+        if value is None:
             # if the bias is in bio units we need calibration to give the
             # theoretical equivalent
             assert(self.is_calibrated)
-            return self._bias / self.db_calibration.alpha
+            return self.bias_bio / self.db_calibration.alpha
         else:
-            return self._bias
+            return value
 
-    @property
-    def bias_bio(self):
+    @meta.DependsOn("bias_theo")
+    def bias_bio(self, value=None):
         """
             Get or set the bias in biological units (mV).
 
@@ -105,52 +107,49 @@ class LIFsampler(object):
             units both can be retrieved and the conversion will be done when
             needed.
         """
-        if self.bias_is_theo:
+        if value is None:
             # if the bias is theo we need calibration to give the bio equivalent
             assert(self.is_calibrated)
-            return self._bias * self.db_calibration.alpha
+            return self.bias_theo * self.db_calibration.alpha
         else:
-            return self._bias
+            return value
 
-    @bias_theo.setter
-    def bias_theo(self, bias):
-        self._bias = bias
-        self.bias_is_theo = True
-
-    @bias_bio.setter
-    def bias_bio(self, bias):
-        self._bias = bias
-        self.bias_is_theo = False
-
-    @property
-    def vmem_mean(self):
+    @meta.DependsOn("db_calibration")
+    def vmem_mean_theo(self):
         assert(self.is_calibrated)
         return self.db_calibration.mean
 
-    @property
-    def vmem_std(self):
+    @meta.DependsOn("db_calibration")
+    def vmem_std_theo(self):
         assert(self.is_calibrated)
         return self.db_calibration.std
 
-    @property
+    @meta.DependsOn("db_calibration")
     def g_tot(self):
         assert(self.is_calibrated)
         return self.db_calibration.g_tot
 
-    @property
+    @meta.DependsOn("db_calibration")
     def alpha_fitted(self):
         assert(self.is_completely_calibrated)
         return self.db_calibration.alpha
 
-    @property
+    @meta.DependsOn("db_calibration")
     def alpha_theo(self):
         assert(self.is_calibrated)
         return self.db_calibration.alpha_theo
 
-    @property
+    @meta.DependsOn("db_calibration")
     def v_p05(self):
         assert(self.is_calibrated)
         return self.db_calibration.v_p05
+
+    @meta.DependsOn()
+    def db_calibration(self, value=None):
+        """
+            The  database calibration object.
+        """
+        return value
 
     @property
     def is_calibrated(self):
@@ -270,7 +269,8 @@ class LIFsampler(object):
         """
             Attempt to load a certain vmem distribution.
 
-            By default the newest will be loaded, alternatively
+            By default the newest will be loaded, alternatively a speicif id
+            may be specified.
         """
         if not self.silent:
             log.info("Attempting to load vmem distribution.")
@@ -422,6 +422,40 @@ class LIFsampler(object):
 
         return dist(*args, **kwargs)
 
+    # this is just kept for now to make sure the other factor is correct --obreitwi, 14-02-14 20:45:13
+    # def factor_weights_bio_to_theo(self):
+        # if self.pynn_model == "IF_cond_exp":
+            # # from minimization of L2(PSP-rect) -> no more blue sky!!!
+            # # (original comment from v1 code --obreitwi, 19-12-13 21:10:08)
+            # delta_E = np.array([
+                    # self.db_calibration.mean - self.db_params.e_rev_I,
+                    # self.db_params.e_rev_E - self.db_calibration.mean
+                # ])
+            # theo_weights = weights * delta_E[is_exc_int] /\
+                # (cm - g_tot * tau[is_exc_int]) *\
+                # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
+                    # + tau[is_exc_int] * (np.exp(-1.) - 1.)
+                # ) / self.alpha_fitted * g_tot / self.db_params.g_l 
+        # elif self.pynn_model == "IF_curr_exp":
+            # theo_weights = weights / (cm - g_tot * tau[is_exc_int]) *\
+                # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
+                    # + tau[is_exc_int] * (np.exp(-1.) - 1.)
+                # ) / self.alpha_fiited
+
+    @meta.DependsOn("db_calibration")
+    def factor_weights_theo_to_bio_exc(self):
+        return self._calc_factor_weights_theo_to_bio(
+                delta_E=self.db_params.e_rev_E - self.db_calibration.mean,
+                tau=self.db_params.tau_syn_E
+            )
+
+    @meta.DependsOn("db_calibration")
+    def factor_weights_theo_to_bio_inh(self):
+        return self._calc_factor_weights_theo_to_bio(
+                delta_E=self.db_calibration.mean - self.db_params.e_rev_I,
+                tau=self.db_params.tau_syn_I
+            )
+
     def convert_weights_theo_to_bio(self, weights):
         """
             Convert a theoretical boltzmann weight array to biological units
@@ -436,42 +470,16 @@ class LIFsampler(object):
         weights = np.array(weights)
 
         is_exc = weights >= 0.
-        is_inh = np.logical_not(is_exc)
 
         # make an integer array to select one of two values based on the bools
         is_exc_int = np.array(is_exc, dtype=int)
 
-        tau = np.array([
-                self.db_params.tau_syn_I,
-                self.db_params.tau_syn_E,
+        factor = np.array([
+                self.factor_weights_theo_to_bio_inh,
+                self.factor_weights_theo_to_bio_exc,
             ])
 
-        g_tot = self.db_calibration.g_tot
-        cm = self.db_params.cm
-
-        if self.pynn_model == "IF_cond_exp":
-            delta_E = np.array([
-                    self.db_calibration.mean - self.db_params.e_rev_I,
-                    self.db_params.e_rev_E - self.db_calibration.mean
-                ])
-
-            # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
-            # from v1 code, --obreitwi, 19-12-13 19:44:27)
-            nnweights = weights /\
-                (delta_E[is_exc_int] / (cm - g_tot * tau[is_exc_int]) *\
-                    (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm)-1.)\
-                        + tau[is_exc_int] * (np.exp(-1.) - 1.)\
-                    )\
-                )\
-                *self.alpha_fitted*self.db_params.g_l/self.db_calibration.g_tot
-
-        elif self.pynn_model == "IF_curr_exp":
-            nnweights = weights /\
-                (1. / (cm - g_tot * tau[is_exc_int]) *\
-                    (- cm / g_tot * (np.exp(-tau[is_exc_int]*g_tot/cm) - 1.)\
-                        + tau * (p.exp(-1.) - 1.)
-                    )
-                ) * self.alpha_fitted
+        nnweights = weights * factor[is_exc_int]
 
         return nnweights
 
@@ -489,36 +497,16 @@ class LIFsampler(object):
         weights = np.array(weights)
 
         is_exc = weights >= 0.
-        is_inh = np.logical_not(is_exc)
 
         # make an integer array to select one of two values based on the bools
         is_exc_int = np.array(is_exc, dtype=int)
 
-        tau = np.array([
-                self.db_params.tau_syn_I,
-                self.db_params.tau_syn_E,
+        factor = np.array([
+                self.factor_weights_theo_to_bio_inh,
+                self.factor_weights_theo_to_bio_exc,
             ])
 
-        g_tot = self.db_params.g_tot
-        cm = self.db_params.cm
-
-        if self.pynn_model == "IF_cond_exp":
-            # from minimization of L2(PSP-rect) -> no more blue sky!!!
-            # (original comment from v1 code --obreitwi, 19-12-13 21:10:08)
-            delta_E = np.array([
-                    self.db_calibration.mean - self.db_params.e_rev_I,
-                    self.db_params.e_rev_E - self.db_calibration.mean
-                ])
-            theo_weights = weights * delta_E[is_exc_int] /\
-                (cm - g_tot * tau[is_exc_int]) *\
-                (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
-                    + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                ) / self.alpha_fitted * g_tot / self.db_params.g_l 
-        elif self.pynn_model == "IF_curr_exp":
-            theo_weights = weights / (cm - g_tot * tau[is_exc_int]) *\
-                (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
-                    + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                ) / self.alpha_fiited
+        theo_weights = weights / factor[is_exc_int]
 
         return theo_weights
 
@@ -596,7 +584,7 @@ class LIFsampler(object):
         ax.plot(xdata, estim_cdf_v_thresh,
                 label="est. CDF of $V_{mem}$ @ $\mu =v_{thresh}$")
         ax.plot(xdata, estim_sigmoid,
-                label="est. trnsf sigmoid assum. $p(V > V_{thresh} = p_{ON})$")
+                label="est. trf sigm w/ $p(V > V_{thresh} = p_{ON})$")
         ax.plot(samples_v_rest, fitted_p_on, label="fitted $p_{ON}$")
         ax.plot(samples_v_rest, samples_p_on, marker="x", ls="", c="b",
                 label="measured $p_{ON}$")
@@ -608,7 +596,7 @@ class LIFsampler(object):
         ax.set_xlabel("$V_{rest}$")
         ax.set_ylabel("$p_{ON}$")
 
-        ax.legend(bbox_to_anchor=(0.35, 1.))
+        ax.legend(bbox_to_anchor=(1.15, .5))
 
     @meta.plot_function("free_vmem_dist")
     def plot_free_vmem(self, num_bins=200, plot_vlines=True, fig=None, ax=None):
@@ -646,6 +634,30 @@ class LIFsampler(object):
     ###########################
     # INTERNALLY USED METHODS #
     ###########################
+
+    def _calc_factor_weights_theo_to_bio(self, delta_E, tau):
+        g_tot = self.g_tot
+        cm = self.db_params.cm
+
+        if self.pynn_model == "IF_cond_exp":
+            # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
+            # from v1 code, --obreitwi, 19-12-13 19:44:27)
+            factor = self.alpha_fitted * self.db_params.g_l\
+                    / self.db_calibration.g_tot *\
+                (delta_E / (cm - g_tot * tau) *\
+                    (- cm / g_tot * (np.exp(- tau * g_tot / cm)-1.)\
+                        + tau * (np.exp(-1.) - 1.)\
+                    )\
+                )
+
+        elif self.pynn_model == "IF_curr_exp":
+            factor = self.alpha_fitted /\
+                (1. / (cm - g_tot * tau) *\
+                    (- cm / g_tot * (np.exp(-tau*g_tot/cm) - 1.)\
+                        + tau * (np.exp(-1.) - 1.)
+                    )
+                )
+        return factor
 
     def _calc_distribution_theo(self):
         dbc = self.db_calibration
