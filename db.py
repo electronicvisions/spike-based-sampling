@@ -21,6 +21,7 @@ import tempfile
 tempfile.gettempdir()
 import os
 import os.path as osp
+import shutil
 
 # database for parameters
 database = pw.SqliteDatabase(None)
@@ -29,6 +30,7 @@ database = pw.SqliteDatabase(None)
 current_basename = None
 
 def setup(basename="database"):
+    basename = osp.abspath(basename)
     # avoid redundant ".sql.sql" or ".h5.h5" file endings
     base, ext = osp.splitext(basename)
     if ext in [".h5", ".sql"]:
@@ -38,20 +40,27 @@ def setup(basename="database"):
     ds_name = "{}.h5".format(basename)
 
     log.info("Setting up database: {}".format(db_name))
+    if osp.isfile(ds_name):
+        log.info("Backing up HDF5 file..")
+        shutil.copyfile(ds_name, ds_name + ".backup")
+    else:
+        with h5py.File(ds_name, "a") as f:
+            log.info("Creating HDF5 file: {}".format(f.file.name))
+
     if not database.deferred:
         database.close()
     database.init(db_name)
     database.connect()
 
     log.info("Setting up storage for datasets: {}".format(ds_name))
-    meta.data_storage = h5py.File(ds_name, "a")
+    meta.data_storage_filename = ds_name
 
     for model in _merge_order:
         if not model.table_exists():
             log.info("Creating table: {}".format(model.__name__))
             model.create_table()
     global current_basename
-    current_basename = osp.abspath(basename)
+    current_basename = basename
 
 
 def filter_incomplete_calibrations(query):
@@ -156,12 +165,15 @@ class NeuronParameters(BaseModel):
         ignored_fields = ["pynn_model", "id", "date"]
         params = {k: v for k,v in self._data.iteritems()\
                 if v is not None and k not in ignored_fields}
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.debug("PyNN parameters: {}".format(pf(params)))
         return params
 
     class Meta:
         order_by = ("-date",)
         indexes = (
                 ((
+                    'pynn_model',
                     'cm',
                     'tau_m',
                     'tau_refrac',
