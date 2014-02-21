@@ -114,6 +114,10 @@ class LIFsampler(object):
         else:
             return value
 
+    def sync_bias_to_pynn(self):
+        assert self.is_created
+        self.population.set(v_rest=self.get_v_rest_from_bias())
+
     @meta.DependsOn("db_calibration")
     def vmem_mean_theo(self):
         assert(self.is_calibrated)
@@ -535,7 +539,7 @@ class LIFsampler(object):
         self.population = population
         if self.population is None:
             self.population = sim.Population(1,
-                    getattr(self.sim, self.db_params.pynn_model)())
+                    getattr(self.sim, self.pynn_model)())
 
         # get all parameters needed for instance
         params = self.get_pynn_parameters()
@@ -643,7 +647,7 @@ class LIFsampler(object):
             # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
             # from v1 code, --obreitwi, 19-12-13 19:44:27)
             factor = self.alpha_fitted * self.db_params.g_l\
-                    / self.db_calibration.g_tot *\
+                    / self.db_calibration.g_tot /\
                 (delta_E / (cm - g_tot * tau) *\
                     (- cm / g_tot * (np.exp(- tau * g_tot / cm)-1.)\
                         + tau * (np.exp(-1.) - 1.)\

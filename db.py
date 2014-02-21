@@ -30,7 +30,7 @@ database = pw.SqliteDatabase(None)
 current_basename = None
 
 def setup(basename="database"):
-    basename = osp.abspath(basename)
+    basename = osp.abspath(osp.expanduser(osp.expandvars(basename)))
     # avoid redundant ".sql.sql" or ".h5.h5" file endings
     base, ext = osp.splitext(basename)
     if ext in [".h5", ".sql"]:
@@ -196,10 +196,10 @@ class Calibration(BaseModel):
     __metaclass__ = meta.StorageFields
 
     # configuration
-    duration = pw.DoubleField(default=10000.)
-    num_samples = pw.IntegerField(default=1000)
+    duration = pw.DoubleField(default=1e6)
+    num_samples = pw.IntegerField(default=100)
     std_range = pw.DoubleField(default=4.)
-    burn_in_time = pw.DoubleField(default=100.)
+    burn_in_time = pw.DoubleField(default=200.)
     dt = pw.DoubleField(default=0.01)
 
     # We do not check if simulators match when loading (because it should not

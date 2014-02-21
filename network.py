@@ -66,6 +66,9 @@ class BoltzmannMachine(object):
         self.sim_name = sim_name
         self.num_samplers = num_samplers
 
+        self.population = None
+        self.projections = None
+
         if isinstance(pynn_model, basestring):
             pynn_model = [pynn_model] * num_samplers
 
@@ -97,11 +100,9 @@ class BoltzmannMachine(object):
         self.weights_theo = np.zeros((num_samplers, num_samplers))
         # biases are set to zero automaticcaly by the samplers
 
+        self.saturating_synapses_enabled = True
         self.delays = 0.1
         self.selected_sampler_idx = range(self.num_samplers)
-
-        self.population = None
-        self.projections = None
 
     ########################
     # pickle serialization #
@@ -132,6 +133,8 @@ class BoltzmannMachine(object):
 
         state["spike_data"] = self.spike_data
 
+        state["saturating_synapses_enabled"] = self.saturating_synapses_enabled
+
         return state
 
     def __setstate__(self, state):
@@ -156,6 +159,8 @@ class BoltzmannMachine(object):
 
         self.delays = state["delays"]
         self.spike_data = state["spike_data"]
+
+        self.saturating_synapses_enabled = state["saturating_synapses_enabled"]
 
     ######################
     # regular attributes #
@@ -199,20 +204,13 @@ class BoltzmannMachine(object):
             # getter part
             return self.convert_weights_theo_to_bio(self.weights_theo)
 
-    def _check_weight_matrix(self, weights):
-        weights = np.array(weights)
-
-        if len(weights.shape) == 0:
-            scalar_weight = weights
-            weights = np.empty((self.num_samplers, self.num_samplers))
-            weights.fill(scalar_weight)
-
-        expected_shape = (self.num_samplers, self.num_samplers)
-        assert weights.shape == expected_shape,\
-                "Weight matrix shape {}, expected {}".format(weights.shape,
-                        expected_shape)
-        weights = utils.fill_diagonal(weights, 0.)
-        return weights
+    @meta.DependsOn()
+    def saturating_synapses_enabled(self, value):
+        """
+            Use TSO to model saturating synapses between neurons.
+        """
+        assert isinstance(value, bool)
+        return value
 
     @meta.DependsOn("biases_bio")
     def biases_theo(self, biases=None):
@@ -226,6 +224,8 @@ class BoltzmannMachine(object):
 
             for b, sampler in it.izip(biases, self.samplers):
                 sampler.bias_theo = b
+                if self.is_created:
+                    sampler.sync_bias_to_pynn()
 
     @meta.DependsOn("biases_theo")
     def biases_bio(self, biases=None):
@@ -239,6 +239,8 @@ class BoltzmannMachine(object):
 
             for b, sampler in it.izip(biases, self.samplers):
                 sampler.bias_bio = b
+                if self.is_created:
+                    sampler.sync_bias_to_pynn()
 
     def convert_weights_bio_to_theo(self, weights):
         # the column index denotes the target neuron, hence we convert there
@@ -259,6 +261,9 @@ class BoltzmannMachine(object):
             Delays can either be a scalar to indicate a global delay or an
             array to indicate the delays between the samplers.
         """
+        if self.is_created:
+            log.warn("A PyNN object was already created. Its delays will not "
+                    "be modified!")
         delays = np.array(delays)
         if len(delays.shape) == 0:
             scalar_delay = delays
@@ -296,6 +301,10 @@ class BoltzmannMachine(object):
             ((sampler.pynn_model == self.samplers[0].pynn_model)\
 
                 for sampler in self.samplers))
+
+    @property
+    def is_created(self):
+        return self.population is not None
 
     ################
     # MISC methods #
@@ -552,6 +561,21 @@ class BoltzmannMachine(object):
 
         global_delay = len(self.delays.shape) == 0
 
+        column_names = ["weight", "delay"]
+
+        if self.saturating_synapses_enabled:
+            log.info("Creating saturating synapses.")
+            column_names.append("tau_rec")
+            tau_rec = []
+            for sampler in self.samplers:
+                pynn_params = sampler.get_pynn_parameters()
+                tau_rec.append({
+                        "exc" : pynn_params["tau_syn_E"],
+                        "inh" : pynn_params["tau_syn_I"],
+                    })
+        else:
+            log.info("Creating non-saturating synapses.")
+
         self.projections = {}
         for wt in ["exc", "inh"]:
             if weight_is[wt].sum() == 0:
@@ -559,11 +583,6 @@ class BoltzmannMachine(object):
                 continue
 
             log.info("Connecting {} weights.".format(receptor_type[wt]))
-
-            if global_delay:
-                delays = self.delays
-            else:
-                delays = self.delays[weight_is[wt]]
 
             weights = self.weights_bio.copy()
             # weights[np.logical_not(weight_is[wt])] = np.NaN
@@ -580,20 +599,44 @@ class BoltzmannMachine(object):
 
             connection_list = []
             for i_pre, i_post in it.izip(*np.nonzero(weight_is[wt])):
-                connection_list.append(
-                        (i_pre, i_post, weights[i_pre, i_post], self.delays\
+                connection = (i_pre, i_post, weights[i_pre, i_post], self.delays
                             if global_delay else self.delays[i_pre, i_post])
-                    )
+                if self.saturating_synapses_enabled:
+                    connection += (tau_rec[i_post][wt],)
+                connection_list.append(connection)
+
+            if self.saturating_synapses_enabled:
+                synapse_type = sim.TsodyksMarkramSynapse(U=1.)
+            else:
+                synapse_type = sim.StaticSynapse()
 
             self.projections[wt] = sim.Projection(population, population,
-                    synapse_type=sim.StaticSynapse(),
-                    connector=sim.FromListConnector(
-                        connection_list,
-                        column_names=["weight", "delay"]),
+                    synapse_type=synapse_type,
+                    connector=sim.FromListConnector(connection_list,
+                        column_names=column_names),
                     receptor_type=receptor_type[wt])
 
         self.population = population 
 
         return self.population, self.projections
 
+
+    ####################
+    # INTERNAL methods #
+    ####################
+
+    def _check_weight_matrix(self, weights):
+        weights = np.array(weights)
+
+        if len(weights.shape) == 0:
+            scalar_weight = weights
+            weights = np.empty((self.num_samplers, self.num_samplers))
+            weights.fill(scalar_weight)
+
+        expected_shape = (self.num_samplers, self.num_samplers)
+        assert weights.shape == expected_shape,\
+                "Weight matrix shape {}, expected {}".format(weights.shape,
+                        expected_shape)
+        weights = utils.fill_diagonal(weights, 0.)
+        return weights
 
