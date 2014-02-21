@@ -44,8 +44,8 @@ def setup(basename="database"):
         log.info("Backing up HDF5 file..")
         shutil.copyfile(ds_name, ds_name + ".backup")
     else:
-        with h5py.File(ds_name, "a") as f:
-            log.info("Creating HDF5 file: {}".format(f.file.name))
+        with h5py.File(ds_name, "a"):
+            log.info("Creating HDF5 file: {}".format(ds_name))
 
     if not database.deferred:
         database.close()

@@ -7,6 +7,7 @@ import h5py
 import functools as ft
 import peewee as pw
 import logging
+import os.path as osp
 
 from . import utils
 from .logcfg import log
@@ -42,7 +43,10 @@ def create_dataset_compressed(h5grp, *args, **kwargs):
 
 def delete_dataset(h5grp, name):
     h5file = h5grp.file
-    del h5grp[name]
+    try:
+        del h5grp[name]
+    except KeyError:
+        log.error("Could not delete {} from {}.".format(name, h5grp.name))
     h5file.flush()
 
 
@@ -264,11 +268,15 @@ def plot_function(plotname, dpi=300):
             if "save" in kwargs:
                 del kwargs["save"]
 
-            if "plotname" in kwargs:
+            if kwargs.get("plotname", None) is not None:
                 local_plotname = kwargs["plotname"]
                 del kwargs["plotname"]
             else:
                 local_plotname = plotname
+
+            if kwargs.get("plotfolder", None) is not None:
+                local_plotname = osp.join(kwargs["plotfolder"], local_plotname)
+                del kwargs["plotfolder"]
 
             if kwargs.get("ax", None) is None:
                 kwargs["ax"] = kwargs["fig"].add_subplot(111)

@@ -243,17 +243,19 @@ class BoltzmannMachine(object):
                     sampler.sync_bias_to_pynn()
 
     def convert_weights_bio_to_theo(self, weights):
+        conv_weights = np.zeros_like(weights)
         # the column index denotes the target neuron, hence we convert there
         for j, sampler in enumerate(self.samplers):
-            weights[:, j] = sampler.convert_weights_bio_to_theo(weights[:, j])
-        return weights
+            conv_weights[:, j] = sampler.convert_weights_bio_to_theo(weights[:, j])
+        return conv_weights
 
     def convert_weights_theo_to_bio(self, weights):
+        conv_weights = np.zeros_like(weights)
         # the column index denotes the target neuron, hence we convert there
         for j, sampler in enumerate(self.samplers):
-            weights[:, j] = sampler.convert_weights_theo_to_bio(weights[:, j])
+            conv_weights[:, j] = sampler.convert_weights_theo_to_bio(weights[:, j])
 
-        return weights
+        return conv_weights
 
     @meta.DependsOn()
     def delays(self, delays):

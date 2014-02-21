@@ -12,5 +12,6 @@ from . import samplers
 from . import network
 from . import buildingblocks
 from . import comm
+from . import tools
 
 
