@@ -1,102 +1,61 @@
 #!/usr/bin/env python
 # encoding: utf-8
+"""
+    Implemented using zmq.
+"""
 
-import zmq
+import socket as skt
 import numpy as np
 import sys
 import subprocess as sp
 import os.path as osp
-import zlib
 import cPickle as pkl
-import peewee as pw
-import itertools as it
 import os
 
 from .logcfg import log
 from . import utils
 
-# taken from pyzmq examples
-class SerializingSocket(zmq.Socket):
-    """
-        A class with some extra serialization methods send_zipped_pkl is
-        just like send_pyobj, but uses zlib to compress the stream before
-        sending. send_array sends numpy arrays with metadata necessary for
-        reconstructing the array on the other side (dtype,shape).
-    """
+BUFLEN = 4096
 
-    def send_zipped_pkl(self, obj, flags=0, protocol=-1):
-        """
-            pack and compress an object with pkl and zlib.
-        """
-        pobj = pkl.dumps(obj, protocol)
-        zobj = zlib.compress(pobj)
-        log.debug("Zipped pickle is {:d} bytes.".format(len(zobj)))
-        return self.send(zobj, flags=flags)
+# send object as pickle over a socket
+def send_object(socket, obj):
+    obj_str = pkl.dumps(obj, protocol=-1)
+    # first, send the length
+    obj_len = len(obj_str)
+    log.debug("Object length: {}".format(obj_len))
+    socket.send(str(obj_len))
 
-    def recv_zipped_pkl(self, flags=0):
-        """
-            reconstruct a Python object sent with zipped_pkl
-        """
-        zobj = self.recv(flags)
-        pobj = zlib.decompress(zobj)
-        return pkl.loads(pobj)
+    ack = socket.recv(BUFLEN)
+    assert ack == "ACK"
 
-    def send_array(self, A, flags=0, copy=True, track=False):
-        """
-            send a numpy array with metadata
-        """
-        md = dict(
-            dtype = str(A.dtype),
-            shape = A.shape,
-        )
-        self.send_json(md, flags|zmq.SNDMORE)
-        return self.send(A, flags, copy=copy, track=track)
+    send_counter = 0
+    while send_counter < obj_len:
+        chunk_size = socket.send(obj_str[send_counter:])
 
-    def recv_array(self, flags=0, copy=True, track=False):
-        """
-            recv a numpy array
-        """
-        md = self.recv_json(flags=flags)
-        msg = self.recv(flags=flags, copy=copy, track=track)
-        buf = buffer(msg)
-        A = np.frombuffer(buf, dtype=md['dtype'])
-        return A.reshape(md['shape'])
+        if chunk_size == 0:
+            raise RuntimeError("Socket connection lost.")
 
-    # does not work because storage_fields need db-access!!!
-    # ignore for now
-    #
-    # def send_model(self, model, flags=0):
-        # meta = {
-                # "name" : model.__class__.__name__,
-                # "module" : model.__class__.__module__
-            # }
+        send_counter += chunk_size
+    ack = socket.recv(BUFLEN)
+    assert ack == "ACK"
 
-        # model_fields = { k: getattr(model, k)\
-                # for k in dir(model)\
-                # if isinstance(getattr(model.__class__, k), pw.Field)
-            # }
 
-        # storage_field_names = getattr(model, "_storage_fields", [])
-        # storage_fields = { k: getattr(model, k)\
-                # for k in storage_field_names
-            # }
+def recv_object(socket):
+    obj_len = int(socket.recv(BUFLEN))
+    socket.send("ACK")
+    recv_counter = 0
+    chunks = []
+    while recv_counter < obj_len:
+        chunk = socket.recv(BUFLEN)
+        if chunk == "":
+            raise RuntimeError("Socket connection lost.")
 
-        # self.send_json(meta, flags=zmq.SNDMORE)
-        # self.send_json(model_fields, flags=zmq.SNDMORE)
-        # self.send_json(storage_field_names,
-                # flags=(zmq.SNDMORE * (len(storage_fields) > 0)))
+        recv_counter += len(chunk)
+        chunks.append(chunk)
 
-        # for i, sf in enumerate(storage_field_names):
-            # self.send_array(storage_fields[sf],
-                    # flags=zmq.SNDMORE * (i < (len(storage_fields)-1)))
-
-    # def recv_model(self, flags=0):
-        # meta = self.recv_json()
-
-        # exec("import {} as model_module".format(meta["module"]))
-        # model_t = getattr(model_module, meta["name"])
-
-        # model_fields = self.recv_json()
+    obj = pkl.loads("".join(chunks))
+    socket.send("ACK")
+    return obj
 
 
 # run a function in a subprocess in subprocess with a single decorator
@@ -133,13 +92,17 @@ class RunInSubprocess(object):
         return_values = None
         process = None
         try:
-            script_filename = self._setup_script_file()
-            socket, address = self._setup_socket_host()
+            socket, address, port = self._setup_socket_host()
+            script_filename = self._setup_script_file(address, port)
 
-            process = self._spawn_process(script_filename, address)
+            socket.listen(1)
 
-            self._send_arguments(socket, args, kwargs)
-            return_values = self._recv_returnvalue(socket)
+            process = self._spawn_process(script_filename)
+
+            conn, client_address = socket.accept()
+
+            self._send_arguments(conn, args, kwargs)
+            return_values = self._recv_returnvalue(conn)
 
             process.wait()
         except:
@@ -152,8 +115,8 @@ class RunInSubprocess(object):
 
         return return_values
 
-    def _client(self, address):
-        socket = self._setup_socket_client(address)
+    def _client(self, address_tpl):
+        socket = self._setup_socket_client(address_tpl)
         args, kwargs = self._recv_arguments(socket)
 
         return_value = None
@@ -163,27 +126,25 @@ class RunInSubprocess(object):
             self._send_returnvalue(socket, return_value)
 
 
-    def _spawn_process(self, script_filename, address):
+    def _spawn_process(self, script_filename):
         log.debug("Spawning subprocess..")
-        return sp.Popen([sys.executable, script_filename, address],
+        return sp.Popen([sys.executable, script_filename],
                 cwd=self._func_dir)
 
     def _setup_socket_host(self):
         log.debug("Setting up host socket..")
-        ctx = zmq.Context.instance()
 
-        socket = SerializingSocket(ctx, zmq.REQ)
-        socket.bind("ipc://*")
-        address = socket.getsockopt(zmq.LAST_ENDPOINT)
+        socket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
+        socket.bind(("localhost", 0))
+        address, port = socket.getsockname()
 
-        return socket, address
+        return socket, address, port
 
-    def _setup_socket_client(self, address):
+    def _setup_socket_client(self, address_tpl):
         log.debug("Setting up client socket..")
-        ctx = zmq.Context.instance()
 
-        socket = SerializingSocket(ctx, zmq.REP)
-        socket.connect(address)
+        socket = skt.socket(skt.AF_INET, skt.SOCK_STREAM)
+        socket.connect(address_tpl)
 
         return socket
 
@@ -226,79 +187,22 @@ class RunInSubprocess(object):
 
     def _send_arguments(self, socket, args, kwargs):
         log.debug("Sending arguments.")
-        args_transmitter = self._get_transmitter_iter(args)
-        kwargs_transmitter = self._get_transmitter_dict(kwargs)
-
-        socket.send_json(args_transmitter, flags=zmq.SNDMORE)
-        socket.send_json(kwargs_transmitter, flags=zmq.SNDMORE)
-
-        for arg, trans in it.izip(args, args_transmitter):
-            getattr(socket, "send_"+trans)(arg, flags=zmq.SNDMORE)
-
-        for k in kwargs.iterkeys():
-            v = kwargs[k]
-            trans = kwargs_transmitter[k]
-
-            socket.send(trans, flags=zmq.SNDMORE)
-            socket.send(k, flags=zmq.SNDMORE)
-            getattr(socket, "send_"+trans)(v, flags=zmq.SNDMORE)
-
-        # send an empty string to indicate we are finished
-        socket.send("")
+        send_object(socket, (args, kwargs))
 
     def _recv_arguments(self, socket):
         log.debug("Receiving arguments.")
-        args_transmitter = socket.recv_json()
-        kwargs_transmitter = socket.recv_json()
 
-        args = []
-        for trans in args_transmitter:
-            args.append(getattr(socket, "recv_"+trans)())
-
-        kwargs = {}
-        while True:
-            trans = socket.recv()
-            if trans == "":
-                break
-            k = socket.recv()
-            v = getattr(socket, "recv_"+trans)()
-
-            kwargs[k] = v
+        args, kwargs = recv_object(socket)
 
         return args, kwargs
 
     def _send_returnvalue(self, socket, retval):
         log.debug("Sending return value.")
-        if isinstance(retval, tuple):
-            retval_was_tuple = True
-        else:
-            retval = (retval,)
-            retval_was_tuple = False
-
-        retval_transmitters = self._get_transmitter_iter(retval)
-        socket.send_json(retval_transmitters, flags=zmq.SNDMORE)
-
-        for i, (rv, trans) in enumerate(it.izip(retval, retval_transmitters)):
-            getattr(socket, "send_"+trans)(rv, flags=zmq.SNDMORE)
-
-        socket.send_zipped_pkl(retval_was_tuple)
+        send_object(socket, retval)
 
     def _recv_returnvalue(self, socket):
         log.debug("Receiving return value.")
-        retval_transmitters = socket.recv_json()
-
-        retval = []
-        for trans in retval_transmitters:
-            retval.append(getattr(socket, "recv_"+trans)())
-
-        retval_was_tuple = socket.recv_zipped_pkl()
-
-        if retval_was_tuple:
-            retval = tuple(retval)
-        else:
-            retval = retval[0]
-
-        return retval
+        return recv_object(socket)
 
     def _get_module_import_name(self):
         if self._func_module != "__main__":
@@ -308,7 +212,7 @@ class RunInSubprocess(object):
             module_path = osp.basename(module_path)
             return osp.splitext(module_path)[0]
 
-    def _setup_script_file(self):
+    def _setup_script_file(self, address, port):
         # NOTE: Currently we are using shared memory because the process is
         # always started on the same machine, might change in the future.
 
@@ -328,8 +232,8 @@ class RunInSubprocess(object):
             self._get_module_import_name()))
 
         # execute the client subfunction with the passed address
-        script.write("target_module.{}._client(sys.argv[1])\n".format(
-            self._func_name))
+        script.write("target_module.{}._client((\"{}\", {}))\n".format(
+            self._func_name, address, port))
 
         script.close()
 
@@ -341,53 +245,4 @@ class RunInSubprocess(object):
             log.debug("Deleted script file.")
         except OSError:
             log.warn("Could not delete temporary script file for subprocess.")
-
-
-# communication methods (pyzmq example)
-# TODO: Delme once all references are deleted (now in serializing context)
-def send_array(socket, arr, flags=0, copy=True, track=False):
-    """send a numpy array with metadata"""
-    md = dict(
-        dtype = str(arr.dtype),
-        shape = arr.shape,
-    )
-    socket.send_json(md, flags|zmq.SNDMORE)
-    return socket.send(arr, flags, copy=copy, track=track)
-
-def recv_array(socket, flags=0, copy=True, track=False):
-    """recv a numpy array"""
-    md = socket.recv_json(flags=flags)
-    msg = socket.recv(flags=flags, copy=copy, track=track)
-    buf = buffer(msg)
-    arr = np.frombuffer(buf, dtype=md['dtype'])
-    return arr.reshape(md['shape'])
-
-
-def send_src_cfg(socket, db_sources, flags=0):
-    source_cfg = [{"rate": src.rate, "weight": src.weight,
-        "is_exc": src.is_exc, "has_spikes": src.has_spikes}\
-                for src in db_sources]
-
-    # send spike arrays for all sources without rate
-    sources_with_spike_times = filter(lambda x: x.has_spikes, db_sources)
-    num_sources_with_spike_times = len(sources_with_spike_times)
-
-    # first send the the source_cfg
-    socket.send_json(source_cfg,
-            flags=flags|(zmq.SNDMORE * (num_sources_with_spike_times > 0)))
-
-    for i, src in enumerate(sources_with_spike_times):
-        send_array(socket, np.array(src.spike_times),
-                flags=zmq.SNDMORE*(i<(num_sources_with_spike_times-1)),
-                copy=True)
-
-def recv_src_cfg(socket, flags=0):
-    source_cfg = socket.recv_json()
-
-    for src in source_cfg:
-        if src["has_spikes"]:
-            src["spike_times"] = recv_array(socket)
-
-    return source_cfg
-
 

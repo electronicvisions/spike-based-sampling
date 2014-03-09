@@ -34,22 +34,18 @@ class RunInSubprocessWithDatabase(RunInSubprocess):
         (So that reading from database works in subprocess.)
     """
     def _send_arguments(self, socket, args, kwargs):
-        socket.send_json({"current_basename" : db.current_basename})
-
-        # receive the ACK before we pickle and unpickle with db connection
-        ack = socket.recv()
-        assert ack == "ACK"
-
+        log.debug("Sending database settings.")
+        comm.send_object(socket, {"current_basename" : db.current_basename})
         return super(RunInSubprocessWithDatabase, self)\
                 ._send_arguments(socket, args, kwargs)
 
     def _recv_arguments(self, socket):
         assert db.current_basename is None
 
-        db_data = socket.recv_json()
+        log.debug("Receiving database settings.")
+        db_data = comm.recv_object(socket)
         current_basename = db_data["current_basename"]
         db.setup(current_basename)
-        socket.send("ACK")
 
         return super(RunInSubprocessWithDatabase, self)\
                 ._recv_arguments(socket)

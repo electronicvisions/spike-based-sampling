@@ -30,7 +30,7 @@ database = pw.SqliteDatabase(None)
 current_basename = None
 
 def setup(basename="database"):
-    basename = osp.abspath(osp.expanduser(osp.expandvars(basename)))
+    basename = osp.abspath(osp.expandvars(osp.expanduser(basename)))
     # avoid redundant ".sql.sql" or ".h5.h5" file endings
     base, ext = osp.splitext(basename)
     if ext in [".h5", ".sql"]:

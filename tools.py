@@ -79,3 +79,4 @@ def sample_network(database, num_samplers=5, weights=None, biases=None,
 
     bm.plot_dist_marginal(save=True)
     bm.plot_dist_joint(save=True)
+
