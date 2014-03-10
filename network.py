@@ -38,29 +38,37 @@ class BoltzmannMachine(object):
 
         `neuron_parameters` as a single dictionary:
         ====
-            All samplers will have the same parameters specified by
-            neuron_parameters.
+        All samplers will have the same parameters specified by
+        neuron_parameters.
+
+        ----
 
         `neuron_parameters` as a list of dictionaries of length `num_samplers`:
         ====
-            Sampler `i` will have paramaters `neuron_parameters[i]`.
+        Sampler `i` will have paramaters `neuron_parameters[i]`.
+
+        ----
 
         `neuron_parameters` as a list of dictionaries of length <
         `num_samplers` and `neuron_index_to_parameters` is list of length
         `num_samplers` of ints:
         ====
-            Sampler `i` will have parameters
-            `neuron_parameters[neuron_index_to_parameters[i]]`.
+        Sampler `i` will have parameters
+        `neuron_parameters[neuron_index_to_parameters[i]]`.
+
+        ----
 
         `neuron_parameters_db_ids` is a list of ints of length `num_samplers`:
         ====
-            Sampler `i` will load its parameters from database entry with
-            id `neuron_parameters_db_ids[i]`.
+        Sampler `i` will load its parameters from database entry with id
+        `neuron_parameters_db_ids[i]`.
+
+        ----
 
         `neuron_parameters_db_ids` is a single id:
         ====
-            All samplers will load the same neuron parameters with the
-            corresponding id.
+        All samplers will load the same neuron parameters with the
+        corresponding id.
         """
         log.info("Creating new BoltzmannMachine.")
         self.sim_name = sim_name
@@ -165,6 +173,14 @@ class BoltzmannMachine(object):
     ######################
     # regular attributes #
     ######################
+    @meta.DependsOn()
+    def sim_name(self, name):
+        """
+            The full simulator name.
+        """
+        if not name.startswith("pyNN."):
+            name = "pyNN." + name
+        return name
 
     @meta.DependsOn("weights_bio")
     def weights_theo(self, weights=None):
