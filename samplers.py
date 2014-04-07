@@ -76,6 +76,15 @@ class LIFsampler(object):
         self.sources = None
         self.source_populations = None
 
+    @meta.DependsOn()
+    def sim_name(self, name):
+        """
+            The full simulator name.
+        """
+        if not name.startswith("pyNN."):
+            name = "pyNN." + name
+        return name
+
     # implement bias_bio and bias_theo as properties so
     # the user can assign either and query the other automatically
     # (once the sampler is calibrated)

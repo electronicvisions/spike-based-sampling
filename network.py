@@ -552,7 +552,7 @@ class BoltzmannMachine(object):
         # the user requests it
         _nest_optimization = _nest_optimization and hasattr(sim, "nest")
 
-        log.info("Setting up population.")
+        log.info("Setting up population for duration: {}s".format(duration))
         population = sim.Population(self.num_samplers,
                 getattr(sim, self.samplers[0].pynn_model)())
 

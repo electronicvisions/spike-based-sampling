@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-    Implemented using zmq.
+    Implemented using regular sockets.
 """
 
 import socket as skt
