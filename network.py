@@ -624,9 +624,9 @@ class BoltzmannMachine(object):
                 connection_list.append(connection)
 
             if self.saturating_synapses_enabled:
-                synapse_type = sim.TsodyksMarkramSynapse(U=1.)
+                synapse_type = sim.TsodyksMarkramSynapse(U=1., weight=0.)
             else:
-                synapse_type = sim.StaticSynapse()
+                synapse_type = sim.StaticSynapse(weight=0.)
 
             self.projections[wt] = sim.Projection(population, population,
                     synapse_type=synapse_type,
