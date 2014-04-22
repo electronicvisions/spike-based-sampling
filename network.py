@@ -372,10 +372,12 @@ class BoltzmannMachine(object):
             # We are requesting data when there is None
             return None
 
-    def gather_spikes(self, duration, dt=0.1, burn_in_time=100.):
+    def gather_spikes(self, duration, dt=0.1, burn_in_time=100.,
+            create_kwargs=None):
         log.info("Gathering spike data in subprocess..")
         self.spike_data = gather_data.gather_network_spikes(self,
-                duration=duration, dt=dt, burn_in_time=burn_in_time)
+                duration=duration, dt=dt, burn_in_time=burn_in_time,
+                create_kwargs=create_kwargs)
 
     @meta.DependsOn("spike_data")
     def ordered_spikes(self):

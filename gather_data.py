@@ -221,13 +221,19 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
 #####################################
 
 @RunInSubprocessWithDatabase
-def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.):
+def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
+        create_kwargs=None):
+    """
+        create_kwargs: Extra parameters for the networks creation routine.
+    """
 
     exec "import {} as sim".format(network.sim_name) in globals(), locals()
 
     sim.setup(time_step=dt)
 
-    population, projections = network.create(duration=duration)
+    if create_kwargs is None:
+        create_kwargs = {}
+    population, projections = network.create(duration=duration, **create_kwargs)
 
     if isinstance(population, sim.Population):
         population.record("spikes")

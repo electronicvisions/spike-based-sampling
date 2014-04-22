@@ -66,11 +66,10 @@ class LIFsampler(object):
         # as well as determining weights
         self.db_calibration = None
 
-        # the distribution of the free memory potential
-        self.db_vmem_dist = None
-
         # the sources used in calibration
         self.db_sources = None
+
+        self.free_vmem_trace = None
 
         self.population = None
         self.sources = None
@@ -177,8 +176,8 @@ class LIFsampler(object):
         return self.db_params.pynn_model
 
     @property
-    def has_vmem_dist(self):
-        return self.db_vmem_dist is not None
+    def has_free_vmem_trace(self):
+        return self.free_vmem_trace is not None
 
     def get_pynn_parameters(self, adjust_vrest=True):
         """
@@ -220,12 +219,6 @@ class LIFsampler(object):
     @property
     def sources_configured(self):
         return self.db_sources is not None
-
-    def forget_vmem_dist(self):
-        """
-            Unset the vmem distribution already measured.
-        """
-        self.db_vmem_dist = None
 
     def forget_calibration(self):
         """
@@ -276,33 +269,6 @@ class LIFsampler(object):
         if not self.silent:
             log.info("Calibration with id {} loaded.".format(
             self.db_calibration.id))
-        return True
-
-    def load_vmem_distribution(self, id=None):
-        """
-            Attempt to load a certain vmem distribution.
-
-            By default the newest will be loaded, alternatively a speicif id
-            may be specified.
-        """
-        if not self.silent:
-            log.info("Attempting to load vmem distribution.")
-        query = db.VmemDistribution.select()\
-                .where(db.VmemDistribution.used_parameters == self.db_params)
-
-        if id is not None:
-            query.where(db.VmemDistribution.id == id)
-
-        try:
-            self.db_vmem_dist = query.get()
-        except db.VmemDistribution.DoesNotExist:
-            if not self.silent:
-                log.info("No vmem distribution present.")
-            return False
-
-        if not self.silent:
-            log.info("Vmem distribution with id {} loaded.".format(
-            self.db_vmem_dist.id))
         return True
 
     def set_source_cfg(self,
@@ -368,30 +334,26 @@ class LIFsampler(object):
 
         self.db_calibration.link_sources(self.db_sources)
 
-    def measure_vmem_distribution(self, **vmem_distribution_params):
+    def measure_free_vmem_dist(self, duration=100000., dt=0.1, burn_in_time=200.):
         """
             Measure the distribution of the free membrane potential, given
             the parameters (attributes of VmemDistribution).
         """
         assert self.is_calibrated
-        if  not self.has_vmem_dist:
-            log.warn("Vmem distribution already measured, taking new dataset!")
-        self.db_vmem_dist = db.VmemDistribution(**vmem_distribution_params)
-        self.db_vmem_dist.used_parameters = self.db_params
-        self.db_vmem_dist.save()
 
         from .gather_data import gather_free_vmem_trace
 
-        self.db_vmem_dist.voltage_trace = volt_trace = gather_free_vmem_trace(
-                distribution_params=self.db_vmem_dist.get_non_null_fields(),
+        self.free_vmem_trace = gather_free_vmem_trace(
+                distribution_params={
+                        "duration": duration,
+                        "dt": dt,
+                        "burn_in_time": burn_in_time,
+                    },
                 pynn_model=self.pynn_model,
                 neuron_params=self.get_pynn_parameters(),
                 sources_cfg=self.get_sources_cfg_lod(),
                 sim_name=self.sim_name
             )
-
-        self.db_vmem_dist.mean = volt_trace.mean()
-        self.db_vmem_dist.std = volt_trace.std()
 
     def get_sources_cfg_lod(self):
         """
@@ -613,10 +575,10 @@ class LIFsampler(object):
 
     @meta.plot_function("free_vmem_dist")
     def plot_free_vmem(self, num_bins=200, plot_vlines=True, fig=None, ax=None):
-        assert self.has_vmem_dist
+        assert self.has_free_vmem_trace
         assert self.is_calibrated
 
-        volttrace = self.db_vmem_dist.voltage_trace
+        volttrace = self.free_vmem_trace
 
         counts, bins, patches = ax.hist(volttrace, bins=num_bins, normed=True,
                 fc="None")

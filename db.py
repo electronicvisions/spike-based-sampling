@@ -267,26 +267,28 @@ class SourceCFG(BaseModel):
         return self.spike_times_sha1 is not None
 
 
-class VmemDistribution(BaseModel):
-    __metaclass__ = meta.StorageFields
-    # config
-    dt = pw.DoubleField(default=0.1)
-    duration = pw.DoubleField(default=100000.0)
-    burn_in_time = pw.DoubleField(default=200.0)
-    used_parameters = pw.ForeignKeyField(rel_model=NeuronParameters,
-            related_name="distributions")
+# Taken out because it is very easy to record a Vmem distribution...
+# --obreitwi, 22-04-14 11:59:06
+# class VmemDistribution(BaseModel):
+    # __metaclass__ = meta.StorageFields
+    # # config
+    # dt = pw.DoubleField(default=0.1)
+    # duration = pw.DoubleField(default=100000.0)
+    # burn_in_time = pw.DoubleField(default=200.0)
+    # used_parameters = pw.ForeignKeyField(rel_model=NeuronParameters,
+            # related_name="distributions")
 
-    # misc
-    date = pw.DateTimeField(default=datetime.datetime.now)
+    # # misc
+    # date = pw.DateTimeField(default=datetime.datetime.now)
 
-    # results
-    mean = pw.DoubleField(null=True)
-    std = pw.DoubleField(null=True)
+    # # results
+    # mean = pw.DoubleField(null=True)
+    # std = pw.DoubleField(null=True)
 
-    _storage_fields = ["voltage_trace"]
+    # _storage_fields = ["voltage_trace"]
 
-    class Meta:
-        order_by = ("-date",)
+    # class Meta:
+        # order_by = ("-date",)
 
 
 class SourceCFGInCalibration(BaseModel):
@@ -343,7 +345,7 @@ _merge_order = [
         SourceCFG,
         Calibration,
         SourceCFGInCalibration,
-        VmemDistribution,
+        # VmemDistribution
     ]
 
 def merge_databases(db_name_source, db_name_target):
