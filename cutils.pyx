@@ -214,6 +214,18 @@ cdef inline uint get_current_state(uint num_selected, double* tau_sampler_ptr):
     return current_state
 
 
+def autocorr(np.ndarray[np.float64_t, ndim=1] array, uint max_step_diff):
+    cdef np.ndarray[np.float64_t, ndim=1] joints = np.zeros((max_step_diff,),
+            dtype=np.float64)
+
+    cdef uint i
+
+    joints[0] = 1.
+
+    for i in range(1,max_step_diff):
+        joints[i] = np.corrcoef(array[:-i], array[i:])[0,1]
+
+    return joints
 
 @cython.boundscheck(False)
 def get_bm_joint_sim(

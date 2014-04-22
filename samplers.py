@@ -7,6 +7,7 @@ from . import db
 from . import fit
 from . import meta
 from . import buildingblocks as bb
+from . import cutils
 
 import itertools as it
 import numpy as np
@@ -605,6 +606,24 @@ class LIFsampler(object):
         ax.set_ylabel("$p(V_{mem,free})$")
 
         ax.legend(bbox_to_anchor=(0.35, 1.))
+
+    @meta.plot_function("free_vmem_autocorr")
+    def plot_free_vmem_autocorr(self, max_step_diff=1000, fig=None, ax=None):
+        """
+            Plot the autocorrelation of the free membrane potential.
+
+            max_step_diff: What is the maximum difference in steps for which
+                           the autocorrelation should be calculated.
+        """
+        assert self.has_free_vmem_trace
+        autocorr = cutils.autocorr(self.free_vmem_trace, max_step_diff)
+
+        ax.plot(autocorr)
+
+        ax.set_xlabel("$\Delta$ T [steps]")
+        ax.set_ylabel("Correlation")
+        log.info("Done")
+
 
     ###########################
     # INTERNALLY USED METHODS #
