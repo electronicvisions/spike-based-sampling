@@ -160,7 +160,7 @@ class LIFsampler(object):
     @meta.DependsOn()
     def db_calibration(self, value=None):
         """
-            The  database calibration object.
+            The database calibration object.
         """
         return value
 
@@ -239,6 +239,17 @@ class LIFsampler(object):
     def get_v_rest_from_bias(self):
         assert(self.is_calibrated)
         return self.db_calibration.v_p05 + self.bias_bio
+
+
+    def list_calibrations(self):
+        """
+            Return a list of ids of calibrations for this sampler.
+        """
+        query = db.Calibration.select()\
+                .where(db.Calibration.used_parameters == self.db_params)
+
+        return [calib.id for calib in query]
+
 
     def load_calibration(self, id=None):
         """
@@ -418,17 +429,19 @@ class LIFsampler(object):
                     # + tau[is_exc_int] * (np.exp(-1.) - 1.)
                 # ) / self.alpha_fiited
 
-    @meta.DependsOn("db_calibration")
+    @meta.DependsOn("db_calibration", "bias_theo", "bias_bio")
     def factor_weights_theo_to_bio_exc(self):
+        mean, std, g_tot = self.get_vmem_dist_theo()
         return self._calc_factor_weights_theo_to_bio(
-                delta_E=self.db_params.e_rev_E - self.db_calibration.mean,
+                delta_E=self.db_params.e_rev_E - mean,
                 tau=self.db_params.tau_syn_E
             )
 
-    @meta.DependsOn("db_calibration")
+    @meta.DependsOn("db_calibration", "bias_theo", "bias_bio")
     def factor_weights_theo_to_bio_inh(self):
+        mean, std, g_tot = self.get_vmem_dist_theo()
         return self._calc_factor_weights_theo_to_bio(
-                delta_E=self.db_calibration.mean - self.db_params.e_rev_I,
+                delta_E=mean - self.db_params.e_rev_I,
                 tau=self.db_params.tau_syn_I
             )
 

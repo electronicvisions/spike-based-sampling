@@ -89,15 +89,25 @@ def connect_sources(sim, sources_cfg, sources, target):
     return projections
 
 
-def create_nest_optimized_sources(sim, samplers, population, duration):
+def create_nest_optimized_sources(sim, samplers, population, duration,
+        source_model=None, source_model_kwargs=None):
     """
         Create the least number of poisson_generator type specific to python
         and connecte them to the samplers.
 
         Afterwards, all other sources are created with `create_sources` and
         `connect_sources`.
+
+        source_(model/kwargs) can be used to specify a diffferent source model.
     """
     log.info("Applying NEST-specific optimization in source creation.")
+
+    if source_model is None:
+        source_model = "poisson_generator"
+
+    if source_model_kwargs is None:
+        source_model_kwargs = {}
+
     sources = {}
     projections = {}
     # _ps = _per_sampler
@@ -105,12 +115,12 @@ def create_nest_optimized_sources(sim, samplers, population, duration):
 
     # create poisson sources
     has_no_spikes = lambda x: not x["has_spikes"]
-    poisson_cfgs_ps = [filter(has_no_spikes, srcs) for srcs in all_source_cfgs_ps]
+    poisson_cfgs_ps = [filter(has_no_spikes, srcs)
+            for srcs in all_source_cfgs_ps]
 
     num_poisson_ps = np.array([len(srcs) for srcs in poisson_cfgs_ps])
 
     if num_poisson_ps.sum() > 0:
-
         # we want a mapping from each samplers sources into a large flattened
         # array
         offset_ps = np.cumsum(num_poisson_ps) - num_poisson_ps[0]
@@ -121,9 +131,9 @@ def create_nest_optimized_sources(sim, samplers, population, duration):
 
         log.info("Creating {} different poisson sources.".format(
             uniq_rates.size))
-        poisson_gen_t = sim.native_cell_type('poisson_generator')
+        poisson_gen_t = sim.native_cell_type(source_model)
         sources["poisson"] = sim.Population(uniq_rates.size,
-                poisson_gen_t(start=0., stop=duration))
+                poisson_gen_t(start=0., stop=duration, **source_model_kwargs))
 
         sources["poisson"].set(rate=uniq_rates)
 

@@ -26,6 +26,7 @@ def set_loglevel(lg, lvl):
         lvl = getattr(logging, lvl.upper())
     lg.setLevel(lvl)
 
+
 def set_loglevel_stream(lvl="INFO"):
     set_loglevel(default_handler_stream, lvl)
 

@@ -373,11 +373,18 @@ class BoltzmannMachine(object):
             return None
 
     def gather_spikes(self, duration, dt=0.1, burn_in_time=100.,
-            create_kwargs=None):
+            create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
+        """
+            sim_setup_kwargs are the kwargs for the simulator (random seeds).
+
+            initial_vmem are the initialized voltages for all samplers.
+        """
         log.info("Gathering spike data in subprocess..")
         self.spike_data = gather_data.gather_network_spikes(self,
                 duration=duration, dt=dt, burn_in_time=burn_in_time,
-                create_kwargs=create_kwargs)
+                create_kwargs=create_kwargs,
+                sim_setup_kwargs=sim_setup_kwargs,
+                initial_vmem=initial_vmem)
 
     @meta.DependsOn("spike_data")
     def ordered_spikes(self):
@@ -529,7 +536,8 @@ class BoltzmannMachine(object):
     # PYNN methods #
     ################
 
-    def create(self, duration, _nest_optimization=True):
+    def create(self, duration, _nest_optimization=True,
+            _nest_source_model=None, _nest_source_model_kwargs=None):
         """
             Create the sampling network and return the pynn object.
 
@@ -543,7 +551,11 @@ class BoltzmannMachine(object):
 
             `_nest_optimization`: If True the network will try to use as few
             sources as possible with the nest specific `poisson_generator` type.
-            For the coder's sanity
+
+            If a different source model should be used, it can be specified via
+            _nest_source_model (string) and the corresponding kwargs.
+            If the source model needs a parrot neuron that repeats its spikes
+            in order to function, please note it.
         """
         exec "import {} as sim".format(self.sim_name) in globals(), locals()
 
@@ -570,7 +582,9 @@ class BoltzmannMachine(object):
             # make sure the objects returned are referenced somewhere
             self._nest_sources, self._nest_projections =\
                     bb.create_nest_optimized_sources(
-                    sim, self.samplers, population, duration)
+                    sim, self.samplers, population, duration,
+                    source_model=_nest_source_model,
+                    source_model_kwargs=_nest_source_model_kwargs)
 
         # we dont set any connections for weights that are == 0.
         weight_is = {}

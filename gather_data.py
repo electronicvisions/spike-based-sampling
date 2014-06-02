@@ -5,6 +5,7 @@
     Gather calibration data in another process.
 """
 
+import os
 import sys
 import os.path as osp
 import functools as ft
@@ -20,19 +21,50 @@ sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 # NOTE: No relative imports here because the file will also be executed as
 #       script.
 from . import comm
+from . import logcfg
 from .logcfg import log
 from . import buildingblocks as bb
 from . import utils
 from .comm import RunInSubprocess
 from . import db
 
+_subprocess_silent = False
 
-class RunInSubprocessWithDatabase(RunInSubprocess):
+def set_subprocess_silent(silent=False):
+    global _subprocess_silent
+    _subprocess_silent = silent
+
+
+class SendLogLevelMixin(object):
+    def  _send_arguments(self, socket, args, kwargs):
+        log.debug("Sending loglevel information.")
+        comm.send_object(socket, {log.name : log.getEffectiveLevel()})
+        return super(SendLogLevelMixin, self)._send_arguments(
+                socket, args, kwargs)
+
+    def _recv_arguments(self, socket):
+        log.debug("Receiving loglevel information.")
+        loglvls = comm.recv_object(socket)
+        for logname, loglevel in loglvls.iteritems():
+            logging.getLogger(logname).setLevel(loglevel)
+        return super(SendLogLevelMixin, self)._recv_arguments(socket)
+
+
+class RunInSubprocessWithDatabase(SendLogLevelMixin, RunInSubprocess):
     """
         Send current database information along to the subprocess.
 
+
         (So that reading from database works in subprocess.)
     """
+    def _spawn_process(self, script_filename):
+        log.debug("Spawning subprocess..")
+        output = None
+        if _subprocess_silent:
+            output = open(os.devnull, 'w')
+        return sp.Popen([sys.executable, script_filename],
+                cwd=self._func_dir, stdout=output, stderr=output)
+
     def _send_arguments(self, socket, args, kwargs):
         log.debug("Sending database settings.")
         comm.send_object(socket, {"current_basename" : db.current_basename})
@@ -50,11 +82,13 @@ class RunInSubprocessWithDatabase(RunInSubprocess):
         return super(RunInSubprocessWithDatabase, self)\
                 ._recv_arguments(socket)
 
+
 def eta_from_burnin(t_start, burn_in, duration):
     eta = utils.get_eta(t_start, burn_in, duration+burn_in)
     if not isinstance(eta, basestring):
         eta = utils.format_time(eta)
     log.info("ETA (after burn-in): {}".format(eta))
+
 
 # make a log function with ETA
 def make_log_time(duration, num_steps=10, offset=0):
@@ -75,6 +109,7 @@ def make_log_time(duration, num_steps=10, offset=0):
 
     return log_time
 
+
 # get callbacks dependant on backend
 def get_callbacks(sim, log_time_params):
 
@@ -85,6 +120,7 @@ def get_callbacks(sim, log_time_params):
         callbacks = [make_log_time(**log_time_params)]
 
     return callbacks
+
 
 ############################
 # SAMPLER HELPER FUNCTIONS #
@@ -222,14 +258,20 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
 
 @RunInSubprocessWithDatabase
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
-        create_kwargs=None):
+        create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """
         create_kwargs: Extra parameters for the networks creation routine.
+
+        sim_setup_kwargs: Extra parameters for the setup command (random seeds
+        etc.).
     """
+
+    if sim_setup_kwargs is None:
+        sim_setup_kwargs = {}
 
     exec "import {} as sim".format(network.sim_name) in globals(), locals()
 
-    sim.setup(time_step=dt)
+    sim.setup(time_step=dt, **sim_setup_kwargs)
 
     if create_kwargs is None:
         create_kwargs = {}
@@ -237,19 +279,26 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
 
     if isinstance(population, sim.Population):
         population.record("spikes")
+        if initial_vmem is not None:
+            population.initialize(v=initial_vmem)
     else:
         for pop in population:
             pop.record("spikes")
+        if initial_vmem is not None:
+            for pop, v in it.izip(population, initial_vmem):
+                pop.initialize(v=v)
+
 
     callbacks = get_callbacks(sim, {
             "duration" : duration,
             "offset" : burn_in_time,
         })
 
-    log.info("Burning in samplers for {} ms".format(burn_in_time))
     t_start = time.time()
-    sim.run(burn_in_time)
-    eta_from_burnin(t_start, burn_in_time, duration)
+    if burn_in_time > 0.:
+        log.info("Burning in samplers for {} ms".format(burn_in_time))
+        sim.run(burn_in_time)
+        eta_from_burnin(t_start, burn_in_time, duration)
 
     log.info("Starting data gathering run.")
     sim.run(duration, callbacks=callbacks)
