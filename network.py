@@ -289,6 +289,16 @@ class BoltzmannMachine(object):
             delays.fill(scalar_delay)
         return delays
 
+    @meta.DependsOn()
+    def tso_params(self, params=None):
+        """
+            Specify custom TSO parameters.
+        """
+        if params is None:
+            return {"U": 1.}
+        else:
+            return params
+
     def load_calibration(self, *ids):
         """
             Load the specified calibration ids from the samplers.
@@ -597,16 +607,21 @@ class BoltzmannMachine(object):
 
         column_names = ["weight", "delay"]
 
+        tau_rec_overwritten = "tau_rec" in self.tso_params
+
         if self.saturating_synapses_enabled:
             log.info("Creating saturating synapses.")
-            column_names.append("tau_rec")
-            tau_rec = []
-            for sampler in self.samplers:
-                pynn_params = sampler.get_pynn_parameters()
-                tau_rec.append({
-                        "exc" : pynn_params["tau_syn_E"],
-                        "inh" : pynn_params["tau_syn_I"],
-                    })
+            if not tau_rec_overwritten:
+                column_names.append("tau_rec")
+                tau_rec = []
+                for sampler in self.samplers:
+                    pynn_params = sampler.get_pynn_parameters()
+                    tau_rec.append({
+                            "exc" : pynn_params["tau_syn_E"],
+                            "inh" : pynn_params["tau_syn_I"],
+                        })
+            else:
+                log.info("TSO: tau_rec overwritten.")
         else:
             log.info("Creating non-saturating synapses.")
 
@@ -621,8 +636,8 @@ class BoltzmannMachine(object):
             weights = self.weights_bio.copy()
             # weights[np.logical_not(weight_is[wt])] = np.NaN
 
-            if wt == "inh":
-                weights = weights.copy() * -1
+            # if wt == "inh":
+                # weights = weights.copy() * -1
 
             # Not sure that array connector does what we want
             # self.projections[wt] = sim.Projection(population, population,
@@ -635,12 +650,13 @@ class BoltzmannMachine(object):
             for i_pre, i_post in it.izip(*np.nonzero(weight_is[wt])):
                 connection = (i_pre, i_post, weights[i_pre, i_post], self.delays
                             if global_delay else self.delays[i_pre, i_post])
-                if self.saturating_synapses_enabled:
+                if self.saturating_synapses_enabled and not tau_rec_overwritten:
                     connection += (tau_rec[i_post][wt],)
                 connection_list.append(connection)
 
             if self.saturating_synapses_enabled:
-                synapse_type = sim.TsodyksMarkramSynapse(U=1., weight=0.)
+                synapse_type = sim.TsodyksMarkramSynapse(weight=0.,
+                        **self.tso_params)
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)
 
