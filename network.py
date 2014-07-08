@@ -143,6 +143,8 @@ class BoltzmannMachine(object):
 
         state["saturating_synapses_enabled"] = self.saturating_synapses_enabled
 
+        state["tso_params"] = self.tso_params
+
         return state
 
     def __setstate__(self, state):
@@ -167,6 +169,8 @@ class BoltzmannMachine(object):
 
         self.delays = state["delays"]
         self.spike_data = state["spike_data"]
+
+        self.tso_params = state["tso_params"]
 
         self.saturating_synapses_enabled = state["saturating_synapses_enabled"]
 
@@ -636,8 +640,8 @@ class BoltzmannMachine(object):
             weights = self.weights_bio.copy()
             # weights[np.logical_not(weight_is[wt])] = np.NaN
 
-            # if wt == "inh":
-                # weights = weights.copy() * -1
+            if wt == "inh":
+                weights = weights.copy() * -1
 
             # Not sure that array connector does what we want
             # self.projections[wt] = sim.Projection(population, population,
