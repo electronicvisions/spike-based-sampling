@@ -431,9 +431,8 @@ class LIFsampler(object):
 
     @meta.DependsOn("db_calibration", "bias_theo", "bias_bio")
     def factor_weights_theo_to_bio_exc(self):
-        mean, std, g_tot = self.get_vmem_dist_theo()
         return self._calc_factor_weights_theo_to_bio(
-                delta_E=self.db_params.e_rev_E - mean,
+                is_excitatory=True,
                 tau=self.db_params.tau_syn_E
             )
 
@@ -441,7 +440,7 @@ class LIFsampler(object):
     def factor_weights_theo_to_bio_inh(self):
         mean, std, g_tot = self.get_vmem_dist_theo()
         return self._calc_factor_weights_theo_to_bio(
-                delta_E=mean - self.db_params.e_rev_I,
+                is_excitatory=False,
                 tau=self.db_params.tau_syn_I
             )
 
@@ -642,11 +641,15 @@ class LIFsampler(object):
     # INTERNALLY USED METHODS #
     ###########################
 
-    def _calc_factor_weights_theo_to_bio(self, delta_E, tau):
-        g_tot = self.g_tot
+    def _calc_factor_weights_theo_to_bio(self, is_excitatory, tau):
+        mean, std, g_tot = self.get_vmem_dist_theo()
         cm = self.db_params.cm
 
         if self.pynn_model == "IF_cond_exp":
+            if is_excitatory:
+                delta_E = self.db_params.e_rev_E - mean
+            else:
+                delta_E = mean - self.db_params.e_rev_I
             # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
             # from v1 code, --obreitwi, 19-12-13 19:44:27)
             factor = self.alpha_fitted * self.db_params.g_l\

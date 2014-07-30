@@ -248,6 +248,8 @@ def plot_function(plotname, dpi=300):
         If no figure was supplied, the figure will be shown.
         If `save` was supplied, the figure will be saved instead as `plotname`
         instead.
+
+        tight_layout=True can be set to force tight layout.
     """
     def decorator(orig):
         def wrapped(*args, **kwargs):
@@ -274,6 +276,12 @@ def plot_function(plotname, dpi=300):
             else:
                 local_plotname = plotname
 
+            if "tight_layout" in kwargs:
+                tight_layout = kwargs["tight_layout"]
+                del kwargs["tight_layout"]
+            else:
+                tight_layout = False
+
             if kwargs.get("plotfolder", None) is not None:
                 local_plotname = osp.join(kwargs["plotfolder"], local_plotname)
                 del kwargs["plotfolder"]
@@ -285,10 +293,14 @@ def plot_function(plotname, dpi=300):
 
             returnval = orig(*args, **kwargs)
 
+            if tight_layout:
+                kwargs["fig"].tight_layout()
+
             if show:
                 kwargs["fig"].show()
             if save:
                 kwargs["fig"].savefig(local_plotname, dpi=dpi)
+                p.close(kwargs["fig"])
 
             return returnval
 

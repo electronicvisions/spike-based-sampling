@@ -6,7 +6,10 @@ import itertools as it
 import numpy as np
 import logging
 import sys
+import copy
 from pprint import pformat as pf
+
+import pylab as p
 
 from .logcfg import log
 from . import db
@@ -76,6 +79,11 @@ class BoltzmannMachine(object):
 
         self.population = None
         self.projections = None
+
+        if pynn_model is None:
+            errormsg = "No neuron model specified."
+            log.error(errormsg)
+            raise ValueError(errormsg)
 
         if isinstance(pynn_model, basestring):
             pynn_model = [pynn_model] * num_samplers
@@ -297,9 +305,16 @@ class BoltzmannMachine(object):
     def tso_params(self, params=None):
         """
             Specify custom TSO parameters.
+
+            (Taken from NEST source doctstrings:)
+             U          double - probability of release increment (U1) [0,1], default=0.5
+             u          double - Maximum probability of release (U_se) [0,1], default=0.5
+             x          double - current scaling factor of the weight, default=U
+             tau_rec    double - time constant for depression in ms, default=800 ms
+             tau_fac    double - time constant for facilitation in ms, default=0 (off)
         """
         if params is None:
-            return {"U": 1.}
+            return {"U": 1., "u": 1.}
         else:
             return params
 
@@ -545,6 +560,16 @@ class BoltzmannMachine(object):
         ax.set_xticklabels(labels=["\n".join(map(str, state))
             for state in np.ndindex(*self.dist_joint_theo.shape)])
 
+    @meta.plot_function("weights_theo")
+    def plot_weights_theo(self, fig=None, ax=None):
+        self._plot_weights(self.weights_theo, self.biases_theo,
+                label="theoretical values", fig=fig, ax=ax)
+
+    @meta.plot_function("weights_bio")
+    def plot_weights_bio(self, fig=None, ax=None):
+        self._plot_weights(self.weights_bio, self.biases_theo,
+                label="biological values", fig=fig, ax=ax)
+
 
     ################
     # PYNN methods #
@@ -659,8 +684,19 @@ class BoltzmannMachine(object):
                 connection_list.append(connection)
 
             if self.saturating_synapses_enabled:
-                synapse_type = sim.TsodyksMarkramSynapse(weight=0.,
-                        **self.tso_params)
+                if not _nest_optimization:
+                    tso_params = copy.deepcopy(self.tso_params)
+                    try:
+                        del tso_params["u"]
+                    except KeyError:
+                        pass
+                    synapse_type = sim.TsodyksMarkramSynapse(weight=0.,
+                            **tso_params)
+                else:
+                    log.info("Using 'tsodyks2_synapse' native synapse model.")
+                    synapse_type = sim.native_synapse_type("tsodyks2_synapse")(
+                            **self.tso_params)
+
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)
 
@@ -693,4 +729,21 @@ class BoltzmannMachine(object):
                         expected_shape)
         weights = utils.fill_diagonal(weights, 0.)
         return weights
+
+    def _plot_weights(self, weights, biases, label="", cmap="jet", fig=None, ax=None):
+
+        cmap = p.get_cmap(cmap)
+
+        matrix = weights.copy()
+        for i in xrange(matrix.shape[0]):
+            matrix[i, i] = biases[i]
+
+        imshow = ax.imshow(matrix, cmap=cmap, interpolation="nearest")
+        cbar = fig.colorbar(imshow, ax=ax)
+        cbar.set_label(label)
+
+        ax.set_xlabel("sampler id")
+        ax.set_ylabel("sampler id")
+
+
 
