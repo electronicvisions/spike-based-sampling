@@ -80,7 +80,7 @@ class BoltzmannMachine(object):
         self.population = None
         self.projections = None
 
-        if pynn_model is None:
+        if pynn_model is None and neuron_parameters is not None:
             errormsg = "No neuron model specified."
             log.error(errormsg)
             raise ValueError(errormsg)
