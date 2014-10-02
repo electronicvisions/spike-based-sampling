@@ -666,7 +666,12 @@ class BoltzmannMachine(object):
             # weights[np.logical_not(weight_is[wt])] = np.NaN
 
             if wt == "inh":
-                weights = weights.copy() * -1
+                weights = -1
+
+            if self.saturating_synapses_enabled and _nest_optimization:
+                # using native nest synapse model, we need to take care of
+                # weight transformations ourselves
+                weights *= 1000.
 
             # Not sure that array connector does what we want
             # self.projections[wt] = sim.Projection(population, population,
@@ -696,6 +701,7 @@ class BoltzmannMachine(object):
                     log.info("Using 'tsodyks2_synapse' native synapse model.")
                     synapse_type = sim.native_synapse_type("tsodyks2_synapse")(
                             **self.tso_params)
+
 
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)
