@@ -666,7 +666,7 @@ class BoltzmannMachine(object):
             # weights[np.logical_not(weight_is[wt])] = np.NaN
 
             if wt == "inh":
-                weights = -1
+                weights *= -1
 
             if self.saturating_synapses_enabled and _nest_optimization:
                 # using native nest synapse model, we need to take care of
