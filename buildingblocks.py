@@ -160,7 +160,7 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
     has_spikes = lambda x: x["has_spikes"]
     array_cfgs_ps = [filter(has_spikes, srcs) for srcs in all_source_cfgs_ps]
 
-    num_array_ps = [len(srcs) for srcs in poisson_cfgs_ps]
+    num_array_ps = [len(srcs) for srcs in array_cfgs_ps]
 
     if sum(num_array_ps) > 0:
         log.info("Creating array sources for each sampler.")

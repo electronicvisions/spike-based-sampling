@@ -41,6 +41,7 @@ def create_dataset_compressed(h5grp, *args, **kwargs):
     h5grp.file.flush() # sync file to avoid corruption
     return dataset
 
+
 def delete_dataset(h5grp, name):
     h5file = h5grp.file
     try:
@@ -136,6 +137,8 @@ class StorageFields(pw.BaseModel):
         return cls
 
 
+_depdency_checked_token = "_depcheck_done_26bslash9"
+
 class DependsOn(object):
     """
         Descriptor dealing with dependencies to other values.
@@ -191,10 +194,22 @@ class DependsOn(object):
     def _propagate_dependencies(self, klass):
         if self._propagated_dependencies:
             return
+        self._class = klass
         log.debug("Propagating dependencies for {}.".format(self.attr_name))
         for dep in self._dependencies:
             log.debug("{} <- {}".format(self.attr_name, dep))
-            klass.__dict__[dep]._influences.append(self)
+            to_search = [klass]
+            while len(to_search) > 0:
+                k = to_search.pop(0)
+                if dep in k.__dict__:
+                    k.__dict__[dep]._influences.append(self)
+                    break
+                else:
+                    to_search.extend(k.__bases__)
+            else:
+                log.error("Could not add dependency {} for class {}.".format(
+                    dep.__name__, klass.__name__))
+
         self._propagated_dependencies = True
 
     def wipe(self, instance, force=False):
@@ -210,15 +225,23 @@ class DependsOn(object):
             influence.wipe(instance)
 
     def needs_update(self, instance):
-        return getattr(instance, self.value_name, None) is None
+        return isinstance(instance, self._class)\
+                and getattr(instance, self.value_name, None) is None
 
 
 def HasDependencies(klass):
     """
         Decorator that is needed for dependency relations to be maintained.
     """
-    for attr in vars(klass).itervalues():
+    klass_vars = vars(klass)
+    if _depdency_checked_token in klass_vars:
+        return klass
+
+    found_dependencies = False
+
+    for attr in klass_vars.itervalues():
         if isinstance(attr, DependsOn):
+            found_dependencies = True
             attr._propagate_dependencies(klass)
 
     # add wipe function
@@ -231,11 +254,18 @@ def HasDependencies(klass):
 
         descriptor.wipe(self)
 
-    setattr(klass, "wipe", wipe)
+    if found_dependencies:
+        setattr(klass, "wipe", wipe)
+        setattr(klass, _depdency_checked_token, True)
+
+    # catch mixins (they can be modified in place)
+    # note: only direct mixins are caught as long as each class in the hierachy
+    # has at least one dependson object
+    if found_dependencies:
+        for b in klass.__bases__:
+            HasDependencies(b)
 
     return klass
-
-
 
 
 def plot_function(plotname, dpi=300):

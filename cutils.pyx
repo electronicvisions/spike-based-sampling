@@ -325,3 +325,113 @@ def get_bm_joint_sim(
     joints /= duration
     return joints.reshape([2 for i in range(num_selected)])
 
+cdef IF_cond_exp_distribution(
+        np.ndarray[np.float64_t, ndim=1] rates_exc,
+        np.ndarray[np.float64_t, ndim=1] rates_inh,
+        np.ndarray[np.float64_t, ndim=1] weights_exc,
+        np.ndarray[np.float64_t, ndim=1] weights_inh,
+        double e_rev_E,
+        double e_rev_I,
+        double tau_syn_E,
+        double tau_syn_I,
+        double g_l,
+        double v_rest,
+        double cm,
+    ):
+    """
+    High Conductance State distribution
+
+    Source parameters are expected to be numpy arrays.
+    Unit for rates is Hz!
+
+    All parameters are pynn parameters.
+
+    g_l: leak_conductance
+    """
+    # convert rates to kHz
+    rates_exc /= 1000.
+    rates_inh /= 1000.
+
+    # calculate exc, inh and total conductance
+
+    g_exc = np.dot(weights_exc, rates_exc) * tau_syn_E
+    g_inh = np.dot(weights_inh, rates_inh) * tau_syn_I
+    g_tot = g_exc + g_inh + g_l
+
+    # calculate effective (mean) membrane potential and time constant
+
+    tau_eff = cm / g_tot
+    v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + v_rest * g_l) / g_tot
+
+    ####### calculate variance of membrane potential #######
+
+    tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
+    tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
+
+    S_exc = weights_exc * (e_rev_E - v_eff) * tau_g_exc / tau_eff / g_tot
+    S_inh = weights_inh * (e_rev_I - v_eff) * tau_g_inh / tau_eff / g_tot
+
+    var_tau_e = tau_syn_E/2. + tau_eff/2.\
+            - 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E)
+
+    var_tau_i = tau_syn_I/2. + tau_eff/2.\
+            - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I)
+
+    # log.info("v_tau_e/v_tau_i: {} / {}".format(v_tau_e, v_tau_i))
+
+    var = np.dot(rates_exc, S_exc**2) * var_tau_e\
+        + np.dot(rates_inh, S_inh**2) * var_tau_i
+
+    return v_eff, np.sqrt(var), g_tot, tau_eff
+
+
+def IF_curr_exp_distribution(
+        np.ndarray[np.float64_t, ndim=1] rates_exc,
+        np.ndarray[np.float64_t, ndim=1] rates_inh,
+        np.ndarray[np.float64_t, ndim=1] weights_exc,
+        np.ndarray[np.float64_t, ndim=1] weights_inh,
+        double tau_syn_E,
+        double tau_syn_I,
+        double g_l,
+        double v_rest,
+        double cm,
+    ):
+    """
+        Vmem distribution
+        Unit for rates is Hz!
+
+        All parameters are pynn parameters.
+
+        g_l : leak conductance in µS
+    """
+    # convert rates to kHz
+    rates_exc /= 1000.
+    rates_inh /= 1000.
+
+    # calculate total current and conductance
+
+    I_exc = np.dot(weights_exc, rates_exc) * tau_syn_E
+    I_inh = np.dot(-weights_inh, rates_inh) * tau_syn_I
+    g_tot = g_l
+
+    # calculate effective (mean) membrane potential and time constant #######
+
+    tau_eff = cm / g_tot
+    v_eff = (I_exc + I_inh) / g_l + v_rest
+
+    # calculate variance of membrane potential
+
+    tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
+    tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
+
+    S_exc = weights_exc * tau_g_exc / tau_eff / g_tot
+    S_inh = weights_inh * tau_g_inh / tau_eff / g_tot
+
+    var = np.dot(rates_exc, S_exc**2)\
+            * (tau_syn_E/2. + tau_eff/2.\
+                - 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E))\
+        + np.dot(rates_inh, S_inh**2)\
+            * (tau_syn_I/2. + tau_eff/2.\
+                - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I))
+
+    return v_eff, np.sqrt(var), g_tot, tau_eff

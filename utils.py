@@ -71,7 +71,7 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     tau_eff = cm / g_tot
     v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + v_rest * g_l) / g_tot
 
-    log.info("tau_eff: {:.3f} ms".format(tau_eff))
+    log.debug("tau_eff: {:.3f} ms".format(tau_eff))
 
     ####### calculate variance of membrane potential #######
 
@@ -113,7 +113,7 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     # calculate total current and conductance
 
     I_exc = np.dot(weights_exc, rates_exc) * tau_syn_E
-    I_inh = np.dot(weights_inh, rates_inh) * tau_syn_I
+    I_inh = -np.dot(weights_inh, rates_inh) * tau_syn_I
     g_tot = g_l
 
     # calculate effective (mean) membrane potential and time constant #######
@@ -258,6 +258,17 @@ def get_eta(t_start, current, total):
         return t_elapsed / current * (total - current)
     else:
         return "N/A"
+
+def get_eta_str(t_start, current, total):
+    """
+        Same as get_eta but returns a preformatted string.
+    """
+    t_elapsed = time.time() - t_start
+    if current > 0.:
+        return format_time(t_elapsed / current * (total - current))
+    else:
+        return "N/A"
+
 
 def save_pickle(obj, filename, force_extention=False, compresslevel=9):
     """

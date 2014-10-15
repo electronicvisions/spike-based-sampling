@@ -63,6 +63,14 @@ def setup(basename="database"):
     current_basename = basename
 
 
+def export_db_to_env():
+    os.environ["SBS_DATABASE"] = current_basename
+
+
+if "SBS_DATABASE" in os.environ:
+    setup(os.environ["SBS_DATABASE"])
+
+
 def filter_incomplete_calibrations(query):
     return query.where(
             (Calibration.alpha >> None)\

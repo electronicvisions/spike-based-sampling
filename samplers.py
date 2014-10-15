@@ -119,9 +119,15 @@ class LIFsampler(object):
         if value is None:
             # if the bias is theo we need calibration to give the bio equivalent
             assert(self.is_calibrated)
-            return self.bias_theo * self.db_calibration.alpha
+            return self.bias_theo_to_bio(self.bias_theo)
         else:
             return value
+
+    def bias_theo_to_bio(self, bias):
+        return bias * self.db_calibration.alpha
+
+    def bias_bio_to_theo(self, bias):
+        return bias / self.db_calibration.alpha
 
     def sync_bias_to_pynn(self):
         assert self.is_created
@@ -236,9 +242,12 @@ class LIFsampler(object):
                 .where(db.Calibration.used_parameters == self.db_params)
         return [calib.id for calib in query]
 
-    def get_v_rest_from_bias(self):
+    def get_v_rest_from_bias(self, bias=None):
         assert(self.is_calibrated)
-        return self.db_calibration.v_p05 + self.bias_bio
+        if bias is None:
+            return self.db_calibration.v_p05 + self.bias_bio
+        else:
+            return self.db_calibration.v_p05 + self.bias_theo_to_bio(bias)
 
 
     def list_calibrations(self):
