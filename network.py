@@ -296,7 +296,7 @@ class BoltzmannMachineBase(object):
 
             Note: Assumes they do not change over the course of simulation!
         """
-        return np.array([s.db_params.tau_refrac for s in self.samplers])
+        return np.array([s.neuron_params.tau_refrac for s in self.samplers])
 
     @meta.DependsOn()
     def tso_params(self, params=None):
@@ -330,7 +330,7 @@ class BoltzmannMachineBase(object):
             else:
                 id = None
             if not sampler.load_calibration(id=id):
-                failed.append(sampler.db_params.id)
+                failed.append(sampler.neuron_params.id)
 
         return failed
 
@@ -654,7 +654,7 @@ class ThoroughBM(BoltzmannMachineBase):
         for i in self.selected_sampler_idx:
             sampler = self.samplers[i]
             spikes = self.spike_data["spiketrains"][i]
-            marginals[i] = len(spikes) * sampler.db_params.tau_refrac
+            marginals[i] = len(spikes) * sampler.neuron_params.tau_refrac
 
         marginals /= self.spike_data["duration"]
 
@@ -663,7 +663,7 @@ class ThoroughBM(BoltzmannMachineBase):
     @meta.DependsOn("spike_data", "selected_sampler_idx")
     def dist_joint_sim(self):
         # tau_refrac per selected sampler
-        tau_refrac_pss = np.array([self.samplers[i].db_params.tau_refrac
+        tau_refrac_pss = np.array([self.samplers[i].neuron_params.tau_refrac
                 for i in self.selected_sampler_idx])
 
         spike_ids = np.require(self.ordered_spikes["id"], requirements=["C"])
@@ -971,8 +971,8 @@ class RapidBMBase(BoltzmannMachineBase):
         # Second column: offset
         calib_data = np.empty((self.num_samplers, 2), dtype=np.float64)
         for i, sampler in enumerate(self.samplers):
-            calib_data[i, 0] = sampler.db_calibration.alpha
-            calib_data[i, 1] = sampler.db_calibration.v_p05
+            calib_data[i, 0] = sampler.calibration.alpha
+            calib_data[i, 1] = sampler.calibration.v_p05
 
         return calib_data
 

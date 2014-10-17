@@ -127,46 +127,40 @@ def get_callbacks(sim, log_time_params):
 ############################
 
 @comm.RunInSubprocess
-def gather_calibration_data(sim_name, calib_cfg, pynn_model,
-        neuron_params, sources_cfg):
+def gather_calibration_data(
+        param_calib=None):
     """
         This function performs a single calibration run and should normally run
         in a seperate subprocess (which it is when called from LIFsampler).
 
         It does not fit the sigmoid.
-
-        sim_name: name of the simulator module
-        calib_cfg: All non-None keys in Calibration-Model (duration, dt etc.)
-        pynn_model: name of the used neuron model
-        neuron_params: name of the parameters for the neuron
-        sources_cfg: (list of dicts with keys) rate, weight, is_exc
     """
     log.info("Calibration started.")
     log.info("Preparing network.")
     exec("import {} as sim".format(sim_name))
 
-    spread = calib_cfg["std_range"] * calib_cfg["std"]
-    mean = calib_cfg["mean"]
+    calibration = param_calib.calibration
+    neuron_params = param_calib.neuron_params
 
-    num = calib_cfg["num_samples"]
+    samples_v_rest = calibration.get_samples_v_rest()
 
-    burn_in_time = calib_cfg["burn_in_time"]
-    duration = calib_cfg["duration"]
+    burn_in_time = calibration.burn_in_time
+    duration = calibration.duraiton
     total_duration = burn_in_time + duration
 
-    samples_v_rest = np.linspace(mean-spread, mean+spread, num)
-
     # TODO maybe implement a seed here
-    sim.setup(time_step=calib_cfg["dt"])
+    sim.setup(time_step=calibration.dt)
 
     # create sources
-    sources = bb.create_sources(sim, sources_cfg, total_duration)
+    sources = bb.create_sources(sim, calibration.source_config, total_duration)
 
     log.info("Setting up {} samplers.".format(num))
     if log.getEffectiveLevel() <= logging.DEBUG:
         log.debug("Sampler params: {}".format(pf(neuron_params)))
 
-    samplers = sim.Population(num, getattr(sim, pynn_model)(**neuron_params))
+    samplers = sim.Population(len(samples_v_rest),
+            getattr(sim, neuron_params.pynn_model)(
+                **neuron_params.get_pynn_parameters()))
     samplers.record("spikes")
     samplers.initialize(v=samples_v_rest)
     samplers.set(v_rest=samples_v_rest)
@@ -176,10 +170,11 @@ def gather_calibration_data(sim_name, calib_cfg, pynn_model,
             log.debug("v_rest of neuron #{}: {} mV".format(i, s.v_rest))
 
     # connect the two
-    projections = bb.connect_sources(sim, sources_cfg, sources, samplers)
+    projections = bb.connect_sources(sim, calibration.source_config, sources,
+            samplers)
 
     callbacks = get_callbacks(sim, {
-            "duration" : calib_cfg["duration"],
+            "duration" : calibration.duration,
             "offset" : burn_in_time,
         })
 
@@ -202,7 +197,7 @@ def gather_calibration_data(sim_name, calib_cfg, pynn_model,
 
     samples_p_on = num_spikes * neuron_params["tau_refrac"] / duration
 
-    return samples_v_rest, samples_p_on
+    return samples_p_on
 
 
 @comm.RunInSubprocess
@@ -256,7 +251,7 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-@RunInSubprocessWithDatabase
+@RunInSubprocess
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """

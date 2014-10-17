@@ -2,11 +2,14 @@
 # encoding: utf-8
 
 import json
-import os
 import os.path as osp
 import numpy as np
 
 from .logcfg import log
+
+def setup(*args, **kwargs):
+    log.error("The database was discontinued and is without use. Please update "
+            "your script accordingly!")
 
 class Data(object):
     """
@@ -27,7 +30,6 @@ class Data(object):
 
         return cls(**datadict)
 
-
     def __init__(self, **attributes):
         self._from_dict(attributes)
 
@@ -45,6 +47,9 @@ class Data(object):
             json.dump(self._to_dict(), f,
                     ensure_ascii=False, indent=2)
 
+    def copy(self):
+        self.__class__(**self._to_dict())
+
     def _empty(self):
         """
             Set everything apart from class constants
@@ -54,16 +59,16 @@ class Data(object):
                 setattr(self, d, None)
 
     def _to_dict(self, with_type=True):
-        dikt = {d: self._convert_attr(d) for d in self.data_attribute_types}
+        dikt = {d: self._convert_attr(d, with_type=with_type) for d in self.data_attribute_types}
         if with_type:
             dikt["_type"] = self.__class__.__name__
         return dikt
 
-    def _convert_attr(self, name):
+    def _convert_attr(self, name, with_type):
         d = getattr(self, name)
 
         if isinstance(d, Data):
-            return d._to_dict()
+            return d._to_dict(with_type=with_type)
 
         if isinstance(d, np.ndarray):
             return d.tolist()
@@ -97,6 +102,10 @@ class NeuronParameters(Data):
         "pynn_model" : str,
     }
 
+    @property
+    def g_l(self):
+        "Leak conductance in µS"
+        return self.cm / self.tau_m
 
     def get_pynn_parameters(self):
         dikt = self.get_dict()
@@ -152,6 +161,7 @@ class PoissonSourceConfig(SourceConfig):
             "weights" : np.ndarray,
         }
 
+
 class Fit(Data):
     data_attribute_types = {
         "alpha" : float,
@@ -171,9 +181,16 @@ class Calibration(Data):
         "V_rest_max" : float,
         "num_samples" : float,
 
+        "samples_p_on" : np.ndarray,
+
         "fit" : Fit,
         "source_config" : SourceConfig,
     }
+
+    def get_samples_v_rest(self):
+        return np.linspace(
+                self.V_rest_min, self.V_rest_max, self.num_samples,
+                endpoint=True)
 
 
 class ParameterCalibration(Data):
@@ -182,4 +199,61 @@ class ParameterCalibration(Data):
         "calibration" : Calibration,
     }
 
+
+class PreCalibration(Data):
+    """
+        Used by the calibration routine to find the suitable slope.
+    """
+    data_attribute_types = {
+        "sim_name" : str,
+
+        "duration" : float,
+        "dt" : float,
+        "burn_in_time" : float,
+
+        "V_rest_min" : float,
+        "V_rest_max" : float,
+        "dV" : float,
+
+        "source_config" : SourceConfig,
+    }
+
+    def get_samples_v_rest(self):
+        return np.linspace(
+                self.V_rest_min, self.V_rest_max, self.num_samples,
+                endpoint=True)
+
+class VmemDistribution(Data):
+    """
+        Theoretical membrane distribution.
+    """
+
+    data_attribute_types = {
+        "mean"    : float,
+        "std"     : float,
+        "g_tot"   : float,
+        "tau_eff" : float,
+    }
+
+
+class InitialVmemSearch(Data):
+    data_attribute_types = {
+        "V_rest_min" : float,
+        "V_rest_max" : float,
+        "dV" : float,
+        "pre_sim_time" : float,
+
+        "lower_bound" : float,
+        "upper_bound" : float,
+
+        "max_search_steps" : int,
+
+        "sim_name" : str,
+
+        "duration" : float,
+        "dt" : float,
+        "burn_in_time" : float,
+
+        "source_config" : SourceConfig,
+    }
 

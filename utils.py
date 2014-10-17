@@ -31,7 +31,6 @@ __all__ = [
     "fill_diagonal",
     "format_time",
     "gauss",
-    "get_all_source_parameters",
     "get_eta",
     "get_ordered_spike_idx",
     "get_random_string",
@@ -156,37 +155,6 @@ def gauss(x, mean, sigma):
 def erfm(x, mean, sigma):
     return .5*(1.+erf((x-mean)/np.sqrt(2.)/np.abs(sigma)))
 
-
-def get_all_source_parameters(db_sources):
-    """
-        Returns a tuple of `np.array`s with source configuration
-            (rates_exc, rates_inh, weights_exc, weights_inh)
-    """
-
-    num_sources = len(db_sources)
-    num_sources_exc = len(filter(lambda x: x.is_exc, db_sources))
-    num_sources_inh = num_sources - num_sources_exc
-
-    rates_exc = np.empty((num_sources_exc,))
-    weights_exc = np.empty((num_sources_exc,))
-
-    rates_inh = np.empty((num_sources_inh,))
-    weights_inh = np.empty((num_sources_inh,))
-
-    i_exc = 0
-    i_inh = 0
-
-    for src in db_sources:
-        if src.is_exc:
-            rates_exc[i_exc] = src.rate
-            weights_exc[i_exc] = src.weight
-            i_exc += 1
-        else:
-            rates_inh[i_inh] = src.rate
-            weights_inh[i_inh] = src.weight
-            i_inh += 1
-
-    return rates_exc, rates_inh, weights_exc, weights_inh
 
 def fill_diagonal(array, value=0):
     """

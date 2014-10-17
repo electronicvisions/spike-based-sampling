@@ -18,57 +18,33 @@ class LIFsampler(object):
 
     supported_pynn_neuron_models = ["IF_curr_exp", "IF_cond_exp"]
 
-    def __init__(self, sim_name="pyNN.nest",
-            pynn_model=None, neuron_parameters=None, id=None, silent=False):
+    def __init__(self, param_calib, sim_name="pyNN.nest", silent=False):
         """
-            `sim_name`: Name of the used simulator.
-
-            `neuron_pynnmodel`: String specifying which pyNN model to use.
-
-            `neuron_parameters`: Parameters to pyNN model.
-
-            Alternatively: If both `pynn_model` and `neuron_parameters`
-                are None, the stored parameters of `id` are loaded.
+            param_calib:
+                sbs.db.NeuronParameters or sbs.db.ParameterCalibration
         """
         self.silent = silent
 
         if not self.silent:
             log.info("Setting up sampler.")
+
         self.sim_name = sim_name
 
-        if pynn_model is not None and neuron_parameters is not None:
-            self._ensure_model_is_supported(pynn_model)
-            if not self.silent:
-                log.info("Checking parameters in database..")
-            neuron_parameters["pynn_model"] = pynn_model
-            self.db_params = db.sync_params_to_db(neuron_parameters)
+        if isinstance(param_calib, db.ParameterCalibration):
+            self.calibration = param_calib.calibration
+            self.neuron_parameters = param_calib.neuron_parameters
 
-        elif pynn_model is None and neuron_parameters is None:
-            if not self.silent:
-                log.info("Getting parameters with id {}.".format(id))
-            query = db.NeuronParameters.select()
-
-            if id is not None:
-                query.where(db.NeuronParameters.id == id)
-
-            try:
-                self.db_params = query.get()
-            except db.NeuronParameters.DoesNotExist:
-                raise Exception("No neuron parameters found!")
-
-        else:
-            raise Exception("Please specify both model and parameters or "
-                            "neither.")
+        self._ensure_model_is_supported(self.neuron_parameters.pynn_model)
 
         self.bias_theo = 0.
 
         # the loaded calibration object from the database
         # which will be used for adjusting neuron parameters
         # as well as determining weights
-        self.db_calibration = None
+        self.calibration = None
 
         # the sources used in calibration
-        self.db_sources = None
+        self.source_config = None
 
         self.free_vmem_trace = None
 
@@ -102,7 +78,7 @@ class LIFsampler(object):
             # if the bias is in bio units we need calibration to give the
             # theoretical equivalent
             assert(self.is_calibrated)
-            return self.bias_bio / self.db_calibration.alpha
+            return self.bias_bio / self.calibration.fit.alpha
         else:
             return value
 
@@ -124,47 +100,27 @@ class LIFsampler(object):
             return value
 
     def bias_theo_to_bio(self, bias):
-        return bias * self.db_calibration.alpha
+        return bias * self.calibration.alpha
 
     def bias_bio_to_theo(self, bias):
-        return bias / self.db_calibration.alpha
+        return bias / self.calibration.alpha
 
     def sync_bias_to_pynn(self):
         assert self.is_created
         self.population.set(v_rest=self.get_v_rest_from_bias())
 
-    @meta.DependsOn("db_calibration")
-    def vmem_mean_theo(self):
-        assert(self.is_calibrated)
-        return self.db_calibration.mean
+    @meta.DependsOn()
+    def dist_theo(self, value):
+        return value
 
-    @meta.DependsOn("db_calibration")
-    def vmem_std_theo(self):
-        assert(self.is_calibrated)
-        return self.db_calibration.std
-
-    @meta.DependsOn("db_calibration")
-    def g_tot(self):
-        assert(self.is_calibrated)
-        return self.db_calibration.g_tot
-
-    @meta.DependsOn("db_calibration")
-    def alpha_fitted(self):
-        assert(self.is_completely_calibrated)
-        return self.db_calibration.alpha
-
-    @meta.DependsOn("db_calibration")
+    @meta.DependsOn("dist_theo")
     def alpha_theo(self):
-        assert(self.is_calibrated)
-        return self.db_calibration.alpha_theo
-
-    @meta.DependsOn("db_calibration")
-    def v_p05(self):
-        assert(self.is_calibrated)
-        return self.db_calibration.v_p05
+        # estimate for syn weight factor from theo to LIF
+        alpha_theo = .25 * np.sqrt(2. * np.pi) * self.dist_theo.dist_theo
+        return alpha_theo
 
     @meta.DependsOn()
-    def db_calibration(self, value=None):
+    def calibration(self, value=None):
         """
             The database calibration object.
         """
@@ -172,33 +128,29 @@ class LIFsampler(object):
 
     @property
     def is_calibrated(self):
-        return self.db_calibration is not None
-
-    @property
-    def is_completely_calibrated(self):
-        return self.is_calibrated and self.db_calibration.is_complete
+        return self.calibration is not None
 
     @property
     def pynn_model(self):
-        return self.db_params.pynn_model
+        return self.neuron_parameters.pynn_model
 
     @property
     def has_free_vmem_trace(self):
         return self.free_vmem_trace is not None
 
-    def get_pynn_parameters(self, adjust_vrest=True):
+    def get_pynn_parameters(self, adjust_v_rest=True):
         """
             Returns dictionary with all needed pynn parameters to implement
             the sampler. Note: The resting potential will be set according to
             the specified bias.
 
-            `adjust_vrest` can be set to False to maintain the original rest
+            `adjust_v_rest` can be set to False to maintain the original rest
             value. This is only really useful during calibration as there are
             not values yet with which to update.
         """
         assert(self.is_calibrated)
-        params = self.db_params.get_pynn_parameters()
-        if adjust_vrest:
+        params = self.neuron_parameters.get_pynn_parameters()
+        if adjust_v_rest:
             params["v_rest"] = self.get_v_rest_from_bias()
         return params
 
@@ -206,7 +158,7 @@ class LIFsampler(object):
         """
             Return the id of the parameters in the database.
         """
-        return self.db_params.id
+        return self.neuron_parameters.id
 
     def get_calibration_id(self):
         """
@@ -215,7 +167,7 @@ class LIFsampler(object):
             Returns None if the sampler has not been calibrated.
         """
         if self.is_calibrated:
-            return self.db_calibration.id
+            return self.calibration.id
         else:
             return None
 
@@ -223,137 +175,75 @@ class LIFsampler(object):
     def is_created(self):
         return self.population is not None
 
-    @property
-    def sources_configured(self):
-        return self.db_sources is not None
-
     def forget_calibration(self):
         """
             Unsets the calibration for this sampler.
         """
-        self.db_calibration = None
-
-    def get_calibration_ids(self):
-        """
-            Lists all available calibration ids for this set of neuron
-            parameters, newest first.
-        """
-        query = db.Calibration.select(db.Calibration.id)\
-                .where(db.Calibration.used_parameters == self.db_params)
-        return [calib.id for calib in query]
+        self.calibration = None
 
     def get_v_rest_from_bias(self, bias=None):
         assert(self.is_calibrated)
         if bias is None:
-            return self.db_calibration.v_p05 + self.bias_bio
+            return self.calibration.fit.v_p05 + self.bias_bio
         else:
-            return self.db_calibration.v_p05 + self.bias_theo_to_bio(bias)
+            return self.calibration.fit.v_p05 + self.bias_theo_to_bio(bias)
 
-
-    def list_calibrations(self):
+    def calibrate(self, calibration=None, **pre_calibration_parameters):
         """
-            Return a list of ids of calibrations for this sampler.
+            Calibrate the sampler, using the configuration from the provided
+            calibration object.
+
+            If no calibration object is given, self.calibration will be used.
+            In this case no pre-calibration is performed.
+
+            pre_calibration_parameters can be used to alter the parameters of
+            the initial slope search.
         """
-        query = db.Calibration.select()\
-                .where(db.Calibration.used_parameters == self.db_params)
+        if calibration is None:
+            do_pre_calibration = False
+            calibration = self.calibration
+        else:
+            do_pre_calibration = True
 
-        return [calib.id for calib in query]
-
-
-    def load_calibration(self, id=None):
-        """
-            Attempt to load an existing calibration.
-
-            `id` can be used to specify a calibration event from the database
-            which has to have been done with this set of neuron parameters.
-
-            Returns a bool to indicate whether or not the calibration data
-            was successfully loaded.
-        """
-        if not self.silent:
-            log.info("Attempting to load calibration.")
-        query = db.Calibration.select()\
-                .where(db.Calibration.used_parameters == self.db_params)
-
-        if id is not None:
-            query.where(db.Calibration.id == id)
-
-        try:
-            self.db_calibration = query.get()
-        except db.Calibration.DoesNotExist:
-            if not self.silent:
-                log.info("No calibration present.")
-            return False
-
-        self._load_sources()
-
-        if not self.silent:
-            log.info("Calibration with id {} loaded.".format(
-            self.db_calibration.id))
-        return True
-
-    def set_source_cfg(self,
-            weights_exc, weights_inh,
-            rates_exc, rates_inh):
-        assert not self.is_calibrated, "Sources already loaded from calibration"
-        assert(len(weights_exc) == len(rates_exc))
-        assert(len(weights_inh) == len(rates_inh))
-
-        self.db_sources = []
-        for weight, rate, is_exc in\
-                it.chain(
-                    *(it.izip(*a) for a in [
-                            (weights_exc, rates_exc, it.repeat(True)),
-                            (weights_inh, rates_inh, it.repeat(False)),
-                        ]
-                    )
-                ):
-            self.db_sources.append(db.create_source_cfg(rate, weight, is_exc))
-
-    def calibrate(self, **calibration_params):
-        """
-            Calibrate the sampler, using the specified source parameters.
-        """
-        assert self.sources_configured, "Please use `set_source_cfg` prior to "\
-                "calibrating."
-
-        calibration_params["simulator"] = self.sim_name
-        calibration_params["used_parameters"] = self.db_params
-
-        # sync to db because the gathering function writes to it
-
-        self.db_calibration = db.Calibration(**calibration_params)
-
-        self._calc_distribution_theo()
-        self._estimate_alpha()
-
-        self.db_calibration.save()
+        calibration.sim_name = self.sim_name
 
         # by importing here we avoid importing networking stuff until we have to
         from .gather_data import gather_calibration_data
-        self.db_calibration.samples_v_rest, self.db_calibration.samples_p_on =\
-                gather_calibration_data(
-                    sim_name=self.sim_name,
-                    calib_cfg=self.db_calibration.get_non_null_fields(),
-                    pynn_model=self.pynn_model,
-                    neuron_params=self.db_params.get_pynn_parameters(),
-                    sources_cfg=self.get_sources_cfg_lod()
-                )
+
+        if do_pre_calibration:
+            final_pre_calib = self._do_pre_calibration(calibration,
+                    **pre_calibration_parameters)
+
+        # copy the final V_rest ranges
+        calibration.V_rest_min = final_pre_calib.V_rest_min
+        calibration.V_rest_max = final_pre_calib.V_rest_max
+
+        self._calc_distribution_theo()
+        # self._estimate_alpha()
+
+        # do final, proper calibration
+        calibparams = db.ParameterCalibration(
+                calibration=calibration,
+                neuron_parameters=self.neuron_parameters)
+
+        self.calibration.samples_p_on = gather_calibration_data(
+            calib_params=calibparams)
 
         if not self.silent:
             log.info("Calibration data gathered, performing fit.")
-        self.db_calibration.v_p05, self.db_calibration.alpha = fit.fit_sigmoid(
-            self.db_calibration.samples_v_rest,
-            self.db_calibration.samples_p_on,
-            guess_p05=self.db_params.v_thresh,
-            guess_alpha=self.db_calibration.alpha_theo)
-        self.db_calibration.save()
+
+        self.calibration.fit = db.Fit()
+        self.calibration.fit.v_p05, self.calibration.fit.alpha =\
+            fit.fit_sigmoid(
+                samples_v_rest=self.calibration.get_samples_v_rest(),
+                self.calibration.samples_p_on,
+                guess_p05=self.neuron_parameters.v_thresh,
+                guess_alpha=self.alpha_theo)
 
         if not self.silent:
-            log.info("Fitted alpha: {:.3f}".format(self.alpha_fitted))
-            log.info("Fitted v_p05: {:.3f} mV".format(self.v_p05))
-
-        self.db_calibration.link_sources(self.db_sources)
+            log.info("Fitted alpha: {:.3f}".format(self.calibration.fit.alpha))
+            log.info("Fitted v_p05: {:.3f} mV".format(
+                self.calibration.fit.v_p05))
 
     def measure_free_vmem_dist(self, duration=100000., dt=0.1, burn_in_time=200.):
         """
@@ -372,41 +262,35 @@ class LIFsampler(object):
                     },
                 pynn_model=self.pynn_model,
                 neuron_params=self.get_pynn_parameters(),
-                sources_cfg=self.get_sources_cfg_lod(),
+                source_config=self.calibration.source_config,
                 sim_name=self.sim_name
             )
-
-    def get_sources_cfg_lod(self):
-        """
-            Get source parameters as List-Of-Dictionaries
-        """
-        needed_attributes = [
-                "rate",
-                "weight",
-                "is_exc",
-                "has_spikes",
-                "spike_times",
-            ]
-        return [{k: getattr(src, k) for k in needed_attributes}
-                for src in self.db_sources]
 
     def get_all_source_parameters(self):
         """
             Returns a tuple of `np.array`s with source configuration
                 (rates_exc, rates_inh, weights_exc, weights_inh)
         """
-        assert(self.sources_configured)
+        src_cfg = self.calibration.source_config
+        is_exc = src_cfg.weights > 0.
+        is_inh = np.logical_not(is_exc)
 
-        return utils.get_all_source_parameters(self.db_sources)
+        rates_exc = src_cfg.rates[is_exc]
+        rates_inh = src_cfg.rates[is_inh]
+        weights_exc = src_cfg.weights[is_exc]
+        weights_inh = src_cfg.weights[is_inh]
+
+        return rates_exc, rates_inh, weights_exc, weights_inh
 
     def get_vmem_dist_theo(self):
         dist = getattr(utils, "{}_distribution".format(self.pynn_model))
+        # TODO:
         args = self.get_all_source_parameters()
-        if not self.is_completely_calibrated:
+        if not self.calibration.fit is None:
             if not self.silent:
                 log.info("Computing vmem distribution ONLY from supplied neuron "
                      "parameters!")
-            kwargs = self.db_params.get_pynn_parameters()
+            kwargs = self.neuron_parameters.get_pynn_parameters()
         else:
             if not self.silent:
                 log.info("Computing vmem distribution with bias set to {}.".format(
@@ -414,7 +298,7 @@ class LIFsampler(object):
             kwargs = self.get_pynn_parameters()
 
         # g_l is not a pynn parameter
-        kwargs["g_l"] = self.db_params.g_l
+        kwargs["g_l"] = self.neuron_parameters.g_l
 
         return dist(*args, **kwargs)
 
@@ -424,33 +308,33 @@ class LIFsampler(object):
             # # from minimization of L2(PSP-rect) -> no more blue sky!!!
             # # (original comment from v1 code --obreitwi, 19-12-13 21:10:08)
             # delta_E = np.array([
-                    # self.db_calibration.mean - self.db_params.e_rev_I,
-                    # self.db_params.e_rev_E - self.db_calibration.mean
+                    # self.calibration.mean - self.neuron_params.e_rev_I,
+                    # self.neuron_params.e_rev_E - self.calibration.mean
                 # ])
             # theo_weights = weights * delta_E[is_exc_int] /\
                 # (cm - g_tot * tau[is_exc_int]) *\
                 # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
                     # + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                # ) / self.alpha_fitted * g_tot / self.db_params.g_l 
+                # ) / self.alpha_fitted * g_tot / self.neuron_params.g_l 
         # elif self.pynn_model == "IF_curr_exp":
             # theo_weights = weights / (cm - g_tot * tau[is_exc_int]) *\
                 # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
                     # + tau[is_exc_int] * (np.exp(-1.) - 1.)
                 # ) / self.alpha_fiited
 
-    @meta.DependsOn("db_calibration", "bias_theo", "bias_bio")
+    @meta.DependsOn("calibration", "bias_theo", "bias_bio")
     def factor_weights_theo_to_bio_exc(self):
         return self._calc_factor_weights_theo_to_bio(
                 is_excitatory=True,
-                tau=self.db_params.tau_syn_E
+                tau=self.neuron_parameters.tau_syn_E
             )
 
-    @meta.DependsOn("db_calibration", "bias_theo", "bias_bio")
+    @meta.DependsOn("calibration", "bias_theo", "bias_bio")
     def factor_weights_theo_to_bio_inh(self):
         mean, std, g_tot = self.get_vmem_dist_theo()
         return self._calc_factor_weights_theo_to_bio(
                 is_excitatory=False,
-                tau=self.db_params.tau_syn_I
+                tau=self.neuron_parameters.tau_syn_I
             )
 
     def convert_weights_theo_to_bio(self, weights):
@@ -542,9 +426,9 @@ class LIFsampler(object):
         if create_pynn_sources == True:
             assert duration is not None, "Instructed to create sources "\
                     "without duration!"
-            sources_cfg = self.get_sources_cfg_lod()
-            self.sources = bb.create_sources(sim, sources_cfg, duration)
-            self.source_projections = bb.connect_sources(sim, sources_cfg,
+            source_config = self.calibration.source_config
+            self.sources = bb.create_sources(sim, source_config, duration)
+            self.source_projections = bb.connect_sources(sim, source_config,
                     self.sources, self.population)
 
         return self.population
@@ -558,12 +442,14 @@ class LIFsampler(object):
             fig=None, ax=None):
         assert self.is_calibrated
 
-        samples_v_rest = self.db_calibration.samples_v_rest
-        samples_p_on = self.db_calibration.samples_p_on
+        self._calc_distribution_theo()
 
-        v_thresh = self.db_params.v_thresh
-        v_p05 = self.db_calibration.v_p05
-        std = self.db_calibration.std
+        samples_v_rest = self.calibration.get_samples_v_rest()
+        samples_p_on = self.calibration.samples_p_on
+
+        v_thresh = self.neuron_parameters.v_thresh
+        v_p05 = self.calibration.fit.v_p05
+        std = self.dist_theo.std
 
         xdata = np.linspace(v_thresh-4.*std, v_thresh+4.*std, 500)
 
@@ -607,8 +493,8 @@ class LIFsampler(object):
 
         ax.set_xlim(volttrace.min(), volttrace.max())
 
-        v_thresh = self.db_params.v_thresh
-        v_p05 = self.db_calibration.v_p05
+        v_thresh = self.neuron_parameters.v_thresh
+        v_p05 = self.calibration.fit.v_p05
         if plot_vlines:
             ax.axvline(v_thresh, ls="--", label="$v_{thresh}$", c="r")
             ax.axvline(v_p05, ls="--", label="$v_{p=0.5}$", c="b")
@@ -652,17 +538,17 @@ class LIFsampler(object):
 
     def _calc_factor_weights_theo_to_bio(self, is_excitatory, tau):
         mean, std, g_tot = self.get_vmem_dist_theo()
-        cm = self.db_params.cm
+        cm = self.neuron_parameters.cm
 
         if self.pynn_model == "IF_cond_exp":
             if is_excitatory:
-                delta_E = self.db_params.e_rev_E - mean
+                delta_E = self.neuron_parameters.e_rev_E - mean
             else:
-                delta_E = mean - self.db_params.e_rev_I
+                delta_E = mean - self.neuron_parameters.e_rev_I
             # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
             # from v1 code, --obreitwi, 19-12-13 19:44:27)
-            factor = self.alpha_fitted * self.db_params.g_l\
-                    / self.db_calibration.g_tot /\
+            factor = self.alpha_fitted * self.neuron_parameters.g_l\
+                    / self.calibration.g_tot /\
                 (delta_E / (cm - g_tot * tau) *\
                     (- cm / g_tot * (np.exp(- tau * g_tot / cm)-1.)\
                         + tau * (np.exp(-1.) - 1.)\
@@ -679,27 +565,95 @@ class LIFsampler(object):
         return factor
 
     def _calc_distribution_theo(self):
-        dbc = self.db_calibration
+        dbc = self.dist_theo = db.VmemDistribution()
 
-        dbc.mean, dbc.std, dbc.g_tot = self.get_vmem_dist_theo()
+        dbc.mean, dbc.std, dbc.g_tot, dbc.tau_eff = self.get_vmem_dist_theo()
         if not self.silent:
-            log.info(u"Theoretical membrane distribution: {:.3f}±{:.3f}mV".format(
+            log.info(u"Theoretical Vmem distribution: {:.3f}±{:.3f}mV".format(
             dbc.mean, dbc.std))
-
-    def _estimate_alpha(self):
-        dbc = self.db_calibration
-        # estimate for syn weight factor from theo to LIF
-        dbc.alpha_theo = .25 * np.sqrt(2. * np.pi) * dbc.std
-
-    def _load_sources(self):
-        assert(self.is_calibrated)
-        self.db_sources = list(db.SourceCFG.select()\
-                .join(db.SourceCFGInCalibration).join(db.Calibration)\
-                .where(db.Calibration.id == self.db_calibration).naive())
 
     def _ensure_model_is_supported(self, pynn_neuron_model=None):
         if pynn_neuron_model is None:
             pynn_neuron_model = self.pynn_model
         if pynn_neuron_model not in self.supported_pynn_neuron_models:
             raise Exception("Neuron model not supported!")
+
+    def _do_pre_calibration(self, calibration, **pre_calibration_parameters):
+        pre_calib = db.PreCalibration(
+            V_rest_min=-80., V_rest_max=-20.,
+            dV=0.2,
+            lower_bound=0.1, upper_bound=0.9,
+            duration=1000., #  time spent when scanning for the sigmoid
+            max_search_steps=20,
+        )
+
+        for k,v in it.chain(
+                ((k,v) for k,v in calibration.get_dict().iteritems()
+                    if hasattr(initial_params, k)),
+                pre_calibration_parameters.iteritems()):
+            setattr(pre_calib, k, v)
+
+        orig_pre_calib = pre_calib.copy()
+
+        upper_bound_found = lower_bound_found = False
+
+        samples_v_rest = []
+        samples_p_on = []
+
+        pre_param_calib = db.ParameterCalibration(
+                neuron_parameters=self.neuron_parameters,
+                calibration=pre_calib)
+
+        # by importing here we avoid importing networking stuff until we have to
+        from .gather_data import gather_calibration_data
+
+        V_range = pre_calib.V_rest_max - pre_calib.V_rest_min
+
+        search_steps = 0
+        while search_steps < pre_calib.max_search_steps:
+            if not upper_bound_found:
+                samples_p_on.append(gather_calibration_data(pre_para_calib))
+                samples_v_rest.append(pre_calib.get_samples_v_rest())
+
+            else:
+                samples_p_on.insert(0, gather_calibration_data(pre_para_calib))
+                samples_v_rest.insert(0, pre_calib.get_samples_v_rest())
+
+            upper_bound_found = any(((spon > pre_param_calib.upper_bound).any()
+                for spon in reversed(samples_p_on)))
+
+            lower_bound_found = any(((spon < pre_param_calib.lower_bound).any()
+                for spon in samples_p_on))
+
+            if upper_bound_found and lower_bound_found:
+                break
+
+            # adjust the next search range and make sure we are scanning nothing
+            # twice
+            if not upper_bound_found:
+                pre_calib.V_rest_min = max(orig_pre_cailb.V_rest_min,
+                        pre_calib.V_rest_min) + V_range
+                pre_calib.V_rest_max = max(orig_pre_cailb.V_rest_max,
+                        pre_calib.V_rest_max) + V_range
+            else:
+                pre_calib.V_rest_min = min(orig_pre_cailb.V_rest_min,
+                        pre_calib.V_rest_min) - V_range
+                pre_calib.V_rest_max = min(orig_pre_cailb.V_rest_max,
+                        pre_calib.V_rest_max) - V_range
+
+            search_steps += 1
+
+        samples_p_on = np.hstack(*samples_p_on)
+        samples_v_rest = np.hstack(*samples_v_rest)
+
+        idx = np.where((samples_p_on < pre_calib.upper_bound)
+                * (samples_p_on > pre_calib.lower_bound))[0]
+
+        idx_low = max(0, idx[0]-1)
+        idx_high = min(samples_p_on.size, idx[-1]+1)
+
+        pre_calib.V_rest_min = samples_v_rest[idx_low]
+        pre_calib.V_rest_max = samples_v_rest[idx_high]
+
+        return pre_calib
 
