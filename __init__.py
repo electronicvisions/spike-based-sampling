@@ -15,5 +15,6 @@ from . import network
 from . import buildingblocks
 from . import comm
 from . import tools
+from . import cells
 
 

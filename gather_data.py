@@ -128,7 +128,7 @@ def get_callbacks(sim, log_time_params):
 
 @comm.RunInSubprocess
 def gather_calibration_data(
-        param_calib=None):
+        sampler_config=None):
     """
         This function performs a single calibration run and should normally run
         in a seperate subprocess (which it is when called from LIFsampler).
@@ -137,15 +137,15 @@ def gather_calibration_data(
     """
     log.info("Calibration started.")
     log.info("Preparing network.")
-    exec("import {} as sim".format(sim_name))
+    calibration = sampler_config.calibration
+    neuron_params = sampler_config.neuron_parameters
 
-    calibration = param_calib.calibration
-    neuron_params = param_calib.neuron_params
+    exec("import {} as sim".format(calibration.sim_name))
 
     samples_v_rest = calibration.get_samples_v_rest()
 
     burn_in_time = calibration.burn_in_time
-    duration = calibration.duraiton
+    duration = calibration.duration
     total_duration = burn_in_time + duration
 
     # TODO maybe implement a seed here
@@ -154,7 +154,7 @@ def gather_calibration_data(
     # create sources
     sources = bb.create_sources(sim, calibration.source_config, total_duration)
 
-    log.info("Setting up {} samplers.".format(num))
+    log.info("Setting up {} samplers.".format(len(samples_v_rest)))
     if log.getEffectiveLevel() <= logging.DEBUG:
         log.debug("Sampler params: {}".format(pf(neuron_params)))
 
@@ -195,14 +195,14 @@ def gather_calibration_data(
     num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
             dtype=int)
 
-    samples_p_on = num_spikes * neuron_params["tau_refrac"] / duration
+    samples_p_on = num_spikes * neuron_params.tau_refrac / duration
 
     return samples_p_on
 
 
 @comm.RunInSubprocess
 def gather_free_vmem_trace(distribution_params, pynn_model,
-                neuron_params, sources_cfg, sim_name,
+                neuron_params, source_config, sim_name,
                 adjusted_v_thresh=50.):
     """
         Records a voltage trace of the free membrane potential of the given
@@ -217,14 +217,14 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
 
     sim.setup(time_step=dp["dt"])
 
-    sources = bb.create_sources(sim, sources_cfg, dp["duration"])
+    sources = bb.create_sources(sim, source_config, dp["duration"])
 
     population = sim.Population(1, getattr(sim, pynn_model)(**neuron_params))
     population.record("v")
     population.initialize(v=neuron_params["v_rest"])
     population.set(v_thresh=adjusted_v_thresh)
 
-    projections = bb.connect_sources(sim, sources_cfg, sources, population)
+    projections = bb.connect_sources(sim, source_config, sources, population)
 
     callbacks = get_callbacks(sim, {
             "duration" : dp["duration"],
@@ -251,7 +251,7 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-@RunInSubprocess
+# @RunInSubprocess
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """

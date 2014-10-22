@@ -26,6 +26,8 @@ from .logcfg import log
 __all__ = [
     "IF_cond_exp_distribution",
     "IF_curr_exp_distribution",
+    "IF_cond_exp_cd_distribution",
+    "IF_curr_exp_cd_distribution",
     "check_list_array",
     "erfm",
     "fill_diagonal",
@@ -62,7 +64,7 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     # calculate exc, inh and total conductance
 
     g_exc = np.dot(weights_exc, rates_exc) * tau_syn_E
-    g_inh = np.dot(weights_inh, rates_inh) * tau_syn_I
+    g_inh = np.dot(-weights_inh, rates_inh) * tau_syn_I
     g_tot = g_exc + g_inh + g_l
 
     # calculate effective (mean) membrane potential and time constant
@@ -91,7 +93,7 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     var = np.dot(rates_exc, S_exc**2) * var_tau_e\
         + np.dot(rates_inh, S_inh**2) * var_tau_i
 
-    return v_eff, np.sqrt(var), g_tot
+    return v_eff, np.sqrt(var), g_tot, tau_eff
 
 
 def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
@@ -112,7 +114,7 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     # calculate total current and conductance
 
     I_exc = np.dot(weights_exc, rates_exc) * tau_syn_E
-    I_inh = -np.dot(weights_inh, rates_inh) * tau_syn_I
+    I_inh = np.dot(weights_inh, rates_inh) * tau_syn_I
     g_tot = g_l
 
     # calculate effective (mean) membrane potential and time constant #######
@@ -137,7 +139,10 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
             * (tau_syn_I/2. + tau_eff/2.\
                 - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I))
 
-    return v_eff, np.sqrt(var), g_tot
+    return v_eff, np.sqrt(var), g_tot, tau_eff
+
+IF_cond_exp_cd_distribution = IF_cond_exp_distribution
+IF_curr_exp_cd_distribution = IF_curr_exp_distribution
 
 
 def sigmoid(x):
@@ -238,16 +243,17 @@ def get_eta_str(t_start, current, total):
         return "N/A"
 
 
-def save_pickle(obj, filename, force_extention=False, compresslevel=9):
+def save_pickle(obj, filename, force_extension=False, compresslevel=9):
     """
         Save object in compressed pickle filename.
 
         By default the extension of the filename will always be replaced by
-        "pkl.gz".
+        "pkl.gz". If you want to force a custom extension, set
+        force_extension=True.
     """
 
-    if not force_extention:
-        filename = filename.split(osp.extsep)[0] + ".pkl.gz"
+    if not force_extension:
+        filename = osp.splitext(filename)[0] + ".pkl.gz"
 
     with gzip.open(filename, "wb", compresslevel=compresslevel) as f:
         pickle.dump(obj, f, protocol=-1)
@@ -255,10 +261,11 @@ def save_pickle(obj, filename, force_extention=False, compresslevel=9):
 def load_pickle(filename, force_extension=False):
     """
         Load pickle object from file, if `force_extension` is True, the
-        extension will NOT be changed to ".pkl.gz".
+        extension will NOT be changed to ".pkl.gz" (the user specified
+        extension will be forced).
     """
     if not force_extension:
-        filename = filename.split(osp.extsep)[0] + ".pkl.gz"
+        filename = osp.splitext(filename)[0] + ".pkl.gz"
 
     if filename.split(osp.extsep)[-1] == "gz":
         file_opener = gzip.open

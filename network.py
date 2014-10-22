@@ -27,50 +27,14 @@ class BoltzmannMachineBase(object):
     """
 
     def __init__(self, num_samplers, sim_name="pyNN.nest",
-            pynn_model=None,
-            neuron_parameters=None, neuron_index_to_parameters=None,
-            neuron_parameters_db_ids=None):
+            sampler_config=None):
         """
-        Sets up a Boltzmann network.
+            Sets up a Boltzmann network.
 
-        `pynn_model` is the string of the pyNN model used. Note that if
-        neuron_parmas is a list, `pynn_model` also has to be.
-
-        There are several ways to specify neuron_parameters:
-
-        `neuron_parameters` as a single dictionary:
-        ====
-        All samplers will have the same parameters specified by
-        neuron_parameters.
-
-        ----
-
-        `neuron_parameters` as a list of dictionaries of length `num_samplers`:
-        ====
-        Sampler `i` will have paramaters `neuron_parameters[i]`.
-
-        ----
-
-        `neuron_parameters` as a list of dictionaries of length <
-        `num_samplers` and `neuron_index_to_parameters` is list of length
-        `num_samplers` of ints:
-        ====
-        Sampler `i` will have parameters
-        `neuron_parameters[neuron_index_to_parameters[i]]`.
-
-        ----
-
-        `neuron_parameters_db_ids` is a list of ints of length `num_samplers`:
-        ====
-        Sampler `i` will load its parameters from database entry with id
-        `neuron_parameters_db_ids[i]`.
-
-        ----
-
-        `neuron_parameters_db_ids` is a single id:
-        ====
-        All samplers will load the same neuron parameters with the
-        corresponding id.
+            sampler_config:
+                Either one or a lilst of size `num_samplers` of
+                SamplerConfiguration objects with which the samplers are
+                initialized.
         """
         log.info("Creating new {}.".format(self.__class__.__name__))
         self.sim_name = sim_name
@@ -79,45 +43,21 @@ class BoltzmannMachineBase(object):
         self.population = None
         self.projections = None
 
-        if pynn_model is None and neuron_parameters is not None:
-            errormsg = "No neuron model specified."
-            log.error(errormsg)
-            raise ValueError(errormsg)
+        if sampler_config is None:
+            raise ValueError("Did not specify sampler parameters.")
 
-        if isinstance(pynn_model, basestring):
-            pynn_model = [pynn_model] * num_samplers
+        if isinstance(sampler_config, db.SamplerConfiguration):
+            sampler_config = [sampler_config]\
+                    * self.num_samplers
 
-        if neuron_parameters is not None:
-            if not isinstance(neuron_parameters, c.Sequence):
-                neuron_parameters = [neuron_parameters]
-                neuron_index_to_parameters = [0] * num_samplers
-
-            elif neuron_index_to_parameters is None:
-                neuron_index_to_parameters = range(num_samplers)
-
-            self.samplers = [samplers.LIFsampler(
-                sim_name=self.sim_name,
-                pynn_model=pynn_model[i],
-                neuron_parameters=neuron_parameters[i],
-                silent=True)\
-                        for i in neuron_index_to_parameters]
-
-        elif neuron_parameters_db_ids is not None:
-            if not isinstance(neuron_parameters_db_ids, c.Sequence):
-                neuron_parameters_db_ids = (neuron_parameters_db_ids,)\
-                        * self.num_samplers
-            self.samplers = [samplers.LIFsampler(id=id, sim_name=self.sim_name,
-                silent=True) for id in neuron_parameters_db_ids]
-        else:
-            raise Exception("Please provide either parameters or ids in the "
-                    "database!")
+        self.samplers = [samplers.LIFsampler(npc)
+                for npc in sampler_config]
 
         self.weights_theo = 0.
         # biases are set to zero automaticcaly by the samplers
 
-        self.saturating_synapses_enabled = True
+        self.saturating_synapses_enabled = False
         self.delays = 0.1
-        self.selected_sampler_idx = range(self.num_samplers)
 
     ########################
     # pickle serialization #
@@ -126,53 +66,53 @@ class BoltzmannMachineBase(object):
     # (we can be sure that only saved samplers are used in the BM-network as
     # there is no way to calibrate them from the BM-network)
     # plus record biases and weights
-    def __getstate__(self):
-        log.debug("Reading state information for pickling.")
-        state = {
-                "calibration_ids" : [sampler.get_calibration_id()
-                    for sampler in self.samplers],
-                "current_basename" : db.current_basename,
-            }
-        state["weights"] = self.weights_theo
+    # def __getstate__(self):
+        # log.debug("Reading state information for pickling.")
+        # state = {
+                # "calibration_ids" : [sampler.get_calibration_id()
+                    # for sampler in self.samplers],
+                # "current_basename" : db.current_basename,
+            # }
+        # state["weights"] = self.weights_theo
 
-        state["biases"] = self.biases_theo
+        # state["biases"] = self.biases_theo
 
-        state["delays"] = self.delays
+        # state["delays"] = self.delays
 
-        state["sim_name"] = self.sim_name
-        state["num_samplers"] = self.num_samplers
-        state["params_ids"] = [sampler.get_parameters_id()
-                for sampler in self.samplers]
+        # state["sim_name"] = self.sim_name
+        # state["num_samplers"] = self.num_samplers
+        # state["params_ids"] = [sampler.get_parameters_id()
+                # for sampler in self.samplers]
 
-        state["saturating_synapses_enabled"] = self.saturating_synapses_enabled
+        # state["saturating_synapses_enabled"] = self.saturating_synapses_enabled
 
-        state["tso_params"] = self.tso_params
+        # state["tso_params"] = self.tso_params
 
-        return state
+        # return state
 
-    def __setstate__(self, state):
-        log.debug("Setting state information for unpickling.")
+    # def __setstate__(self, state):
+        # log.debug("Setting state information for unpickling.")
 
-        if state["current_basename"] != db.current_basename:
-            raise Exception("Database mismatch, this network should be "
-            "restored with db {}".format(state["current_basename"]))
+        # if state["current_basename"] != db.current_basename:
+            # raise Exception("Database mismatch, this network should be "
+            # "restored with db {}".format(state["current_basename"]))
 
-        self.__init__(state["num_samplers"],
-                sim_name=state["sim_name"],
-                neuron_parameters_db_ids=state["params_ids"])
+        # self.__init__(state["num_samplers"],
+                # sim_name=state["sim_name"],
+                # neuron_parameters_db_ids=state["params_ids"])
 
-        for i, cid in enumerate(state["calibration_ids"]):
-            if cid is not None:
-                self.samplers[i].load_calibration(id=cid)
+        # for i, cid in enumerate(state["calibration_ids"]):
+            # if cid is not None:
+                # self.samplers[i].load_calibration(id=cid)
 
-        self.weights_theo = state["weights"]
-        self.biases_theo = state["biases"]
+        # self.weights_theo = state["weights"]
+        # self.biases_theo = state["biases"]
 
-        self.delays = state["delays"]
+        # self.delays = state["delays"]
 
-        self.tso_params = state["tso_params"]
+        # self.tso_params = state["tso_params"]
 
-        self.saturating_synapses_enabled = state["saturating_synapses_enabled"]
+        # self.saturating_synapses_enabled = state["saturating_synapses_enabled"]
 
     ######################
     # regular attributes #
@@ -296,7 +236,7 @@ class BoltzmannMachineBase(object):
 
             Note: Assumes they do not change over the course of simulation!
         """
-        return np.array([s.neuron_params.tau_refrac for s in self.samplers])
+        return np.array([s.neuron_parameters.tau_refrac for s in self.samplers])
 
     @meta.DependsOn()
     def tso_params(self, params=None):
@@ -311,28 +251,9 @@ class BoltzmannMachineBase(object):
              tau_fac    double - time constant for facilitation in ms, default=0 (off)
         """
         if params is None:
-            return {"U": 1., "u": 1.}
+            return {"U": 1., "u": 1., "x" : 0.}
         else:
             return params
-
-    def load_calibration(self, *ids):
-        """
-            Load the specified calibration ids from the samplers.
-
-            For any id not specified, the latest configuration will be loaded.
-
-            Returns a list of sampler(-parameter) ids that failed.
-        """
-        failed = []
-        for i, sampler in enumerate(self.samplers):
-            if i < len(ids):
-                id = ids[i]
-            else:
-                id = None
-            if not sampler.load_calibration(id=id):
-                failed.append(sampler.neuron_params.id)
-
-        return failed
 
     def all_samplers_same_model(self):
         """
@@ -442,6 +363,7 @@ class BoltzmannMachineBase(object):
 
         return delays
 
+
 @meta.HasDependencies
 class ThoroughBM(BoltzmannMachineBase):
     """
@@ -529,6 +451,7 @@ class ThoroughBM(BoltzmannMachineBase):
                     tso_params = copy.deepcopy(self.tso_params)
                     try:
                         del tso_params["u"]
+                        del tso_params["x"]
                     except KeyError:
                         pass
                     synapse_type = sim.TsodyksMarkramSynapse(weight=0.,
@@ -542,7 +465,7 @@ class ThoroughBM(BoltzmannMachineBase):
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)
 
-            self.projections[wt] = sim.Projection(population, population,
+            self.projections[wt] = sim.Projection(self.population, self.population,
                     synapse_type=synapse_type,
                     connector=sim.FromListConnector(connection_list,
                         column_names=column_names),
@@ -554,19 +477,19 @@ class ThoroughBM(BoltzmannMachineBase):
     ########################
     # pickle serialization #
     ########################
-    def __getstate__(self):
-        state = super(ThoroughBM, self).__getstate__(self)
+    # def __getstate__(self):
+        # state = super(ThoroughBM, self).__getstate__(self)
 
-        state["selected_sampler_idx"] = self.selected_sampler_idx
-        state["spike_data"] = self.spike_data
+        # state["selected_sampler_idx"] = self.selected_sampler_idx
+        # state["spike_data"] = self.spike_data
 
-        return state
+        # return state
 
-    def __setstate__(self, state):
-        super(ThoroughBM, self).__setstate__(state)
+    # def __setstate__(self, state):
+        # super(ThoroughBM, self).__setstate__(state)
 
-        self.spike_data = state["spike_data"]
-        self.selected_sampler_idx = state["selected_sampler_idx"]
+        # self.spike_data = state["spike_data"]
+        # self.selected_sampler_idx = state["selected_sampler_idx"]
 
 
 
@@ -654,7 +577,7 @@ class ThoroughBM(BoltzmannMachineBase):
         for i in self.selected_sampler_idx:
             sampler = self.samplers[i]
             spikes = self.spike_data["spiketrains"][i]
-            marginals[i] = len(spikes) * sampler.neuron_params.tau_refrac
+            marginals[i] = len(spikes) * sampler.neuron_parameters.tau_refrac
 
         marginals /= self.spike_data["duration"]
 
@@ -663,7 +586,7 @@ class ThoroughBM(BoltzmannMachineBase):
     @meta.DependsOn("spike_data", "selected_sampler_idx")
     def dist_joint_sim(self):
         # tau_refrac per selected sampler
-        tau_refrac_pss = np.array([self.samplers[i].neuron_params.tau_refrac
+        tau_refrac_pss = np.array([self.samplers[i].neuron_parameters.tau_refrac
                 for i in self.selected_sampler_idx])
 
         spike_ids = np.require(self.ordered_spikes["id"], requirements=["C"])
@@ -792,7 +715,6 @@ class ThoroughBM(BoltzmannMachineBase):
     ####################
 
     def _plot_weights(self, weights, biases, label="", cmap="jet", fig=None, ax=None):
-
         cmap = p.get_cmap(cmap)
 
         matrix = weights.copy()
@@ -815,14 +737,27 @@ class RapidBMBase(BoltzmannMachineBase):
 
         Currently only the NEST backend is supported.
     """
+    nest_synapse_type = "cd_connection"
+
     def __init__(self, *args, **kwargs):
         super(RapidBMBase, self).__init__(*args, **kwargs)
         self._binary_state_set_externally = False
         self._sim = None
-        self.current_time = 0.0
+        self.time_current = 0.0
 
-        self.sim_step = 30. # ms
-        self.wipe_time = 50. # time between silence and imprint
+        self.time_sim_step = 30. # ms
+        self.time_wipe = 50. # time between silence and imprint
+
+        self._ensure_cd_pynn_models()
+
+        # needed for the CD based updates
+        self.force_spike_before_run = True
+        self.time_force_spike = 30.
+
+        # shape: (num_factors, 2) first is eta, second is data, third is
+        # model/recon
+        self.update_factors = np.zeros((self.num_samplers, 3))
+
 
     def create(self, connectivity_matrix=None, **kwargs):
         """
@@ -862,13 +797,13 @@ class RapidBMBase(BoltzmannMachineBase):
 
     def run(self):
         """
-            Run the network for self.sim_step milliseconds; after that the
+            Run the network for self.time_sim_step milliseconds; after that the
             binary state can be inspected.
         """
         self.prepare_run()
-        self._sim.run_for(self.sim_step + self.wipe_time)
+        self._sim.run_for(self.time_sim_step + self.time_wipe)
         self.process_run()
-        return self.current_time
+        return self.time_current
 
     def prepare_run(self):
         """
@@ -877,8 +812,9 @@ class RapidBMBase(BoltzmannMachineBase):
 
             Do not forget to call process_run after the run is complete.
         """
-        self.update_weights()
-        self.update_biases()
+        self.update_samplers()
+        # self.update_weights()
+        # self.update_biases()
 
         if self._binary_state_set_externally:
             self._prepare_imprint()
@@ -888,7 +824,7 @@ class RapidBMBase(BoltzmannMachineBase):
             After every manual run, call this function to process the new
             information.
         """
-        self.current_time = self._sim.simulator.state.t
+        self.time_current = self._sim.simulator.state.t
 
     def update_weights(self):
         weights = self.weights_bio.copy() * 1000. # convert to nest manually
@@ -899,31 +835,48 @@ class RapidBMBase(BoltzmannMachineBase):
             # self._sim.nest.SetStatus([conn], {"weight" : weight})
         self._sim.nest.SetStatus(self._nest_connections, "weight", weights)
 
-    def update_biases(self):
-        # recalculate all biological biases
-        self.biases_bio = None
-        for s in self.samplers:
-            s.sync_bias_to_pynn()
+    def get_sampler_update(self):
+        """
+            Should return a dictionary with list or single values to indicate
+            what updated parameters are written to the samplers.
+        """
+        update = []
+        for i,s in enumerate(self.samplers):
+            update.append({
+                "E_L": s.bias_bio,
+                "factor_weight_conversion_exc" :
+                    s.factor_weights_theo_to_bio_exc,
+                "factor_weight_conversion_inh":
+                    s.factor_weights_theo_to_bio_inh,
+                "factor_eta" : self.update_factors[i, 0],
+                "factor_data" : self.update_factors[i, 1],
+                "factor_model" : self.update_factors[i, 2],
+            })
+        return update
+
+    def update_samplers(self):
+        update = self.get_sampler_update()
+        self._sim.nest.SetStatus(self._nest_connections, update)
 
     ##############
     # Properties #
     ##############
 
     @meta.DependsOn()
-    def current_time(self, time):
+    def time_current(self, time):
         """
             Current simulation time.
         """
         return time
 
     @meta.DependsOn()
-    def sim_step(self, step):
+    def time_sim_step(self, step):
         """
             The length of one simulation step.
         """
         return step
 
-    @meta.DependsOn("current_time")
+    @meta.DependsOn("time_current")
     def last_spiketimes(self):
         indices, times = self._sim.nest.GetStatus(
                 self.last_spiketime_detector.all_cells.tolist(),
@@ -949,14 +902,14 @@ class RapidBMBase(BoltzmannMachineBase):
             Updated after every run based on the last spike times.
 
             Can also be set externally to 0/1:
-                0: Strong inhibitory spike
-                1: Strong excitatory spike
+                0: Clamped off
+                1: Clamped on
 
             Any other value marks the state as undefined and it will not be
             enforced.
         """
         if state is None:
-            state = self.current_time - self.last_spiketimes < self.tau_refracs
+            state = self.time_current - self.last_spiketimes < self.tau_refracs
             return np.array(state, dtype=int)
 
         else:
@@ -976,10 +929,49 @@ class RapidBMBase(BoltzmannMachineBase):
 
         return calib_data
 
+    @meta.DependsOn("time_current")
+    def weights_theo(self, value=None):
+        if value is None:
+            assert self.is_created
+            return self._format_weights(np.array(self._sim.nest.GetStatus(
+                self._nest_connections, "weight_theo")))
+        else:
+            value = self._check_weight_matrix(value)
+            if self.is_created:
+                self._write_weights(value, kind="theo")
+            return value
+
+    @meta.DependsOn("time_current")
+    def weights_bio(self, value=None):
+        if value is None:
+            assert self.is_created
+            return self._format_weights(np.array(self._sim.nest.GetStatus(
+                self._nest_connections, "weight")))
+        else:
+            value = self._check_weight_matrix(value)
+            if self.is_created:
+                self._write_weights(value, kind="bio")
+            return value
+
 
     ####################
     # INTERNAL methods #
     ####################
+
+    def _format_weights(self, weights):
+        return weights.reshape(self.num_samplers, self.num_samplers)
+
+    def _write_weights(self, weights, kind="theo"):
+        assert self.is_created
+        if kind == "theo":
+            label = "weight_theo"
+        elif kind == "bio":
+            label = "weight"
+        else:
+            raise ValueError("Invalid weight type supplied.")
+
+        data = [{label: w} for w in weights.reshape(-1)]
+        self._sim.nest.SetStatus(self._nest_connections, data)
 
     def _create_imprint_circuitry(self):
         raise NotImplementedError
@@ -1009,10 +1001,21 @@ class RapidBMBase(BoltzmannMachineBase):
         gids = self._sampler_gids
 
         for src, tgt in it.izip(*np.where(connectivity_matrix)):
-            nest.Connect(gids[src], gids[tgt], 0.,
-                    self.delays[src, tgt] if not global_delay else self.delays)
+            nest.Connect(gids[src], gids[tgt], syn_spec={
+                "weight" : 0.,
+                "delay"  : self.delays[src, tgt] if not global_delay
+                            else self.delays,
+                "model" : self.nest_synapse_type})
 
         self._nest_connections = nest.GetConnections(gids, gids)
+
+    def _ensure_cd_pynn_models(self):
+        for i, sampler in enumerate(self.samplers):
+            if not sampler.pynn_model.endswith("_cd"):
+                new_model = sampler.pynn_model + "_cd"
+                log.warn("[Sampler #{}] Changing model from {} -> {}…".format(i,
+                    sampler.pynn_model, new_model))
+                sampler.neuron_parameters.pynn_model = new_model
 
 
 @meta.HasDependencies
@@ -1021,34 +1024,8 @@ class RapidBMCurrentImprint(RapidBMBase):
         Rapid Boltzmann machine that imprints the needed network state via
         current stimulation.
     """
-
-    def _prepare_imprint(self):
-        log.info("Preparing current imprint") # TODO: DELME
-        binary_state = self.binary_state
-
-        imprint_idx = np.where((binary_state == 0)\
-                + (self.binary_state == 1))[0]
-
-        imprint_start = self.current_time + self.wipe_time
-        imprint_stop = imprint_start + self.sim_step
-
-        self._sim.nest.SetStatus(self._imprint_wipe_gen_id, {
-                "start" : self.current_time,
-                "stop" : imprint_start,
-            })
-
-        for state in [0, 1]:
-            imprint_idx = binary_state == state
-
-            self._sim.nest.SetStatus(
-                self._imprint_gen_ids[imprint_idx].tolist(), {
-                "start" : imprint_start,
-                "stop" : imprint_stop,
-                "amplitude" : self.imprint_current * 1000. * (2*state - 1),
-            })
-
     @meta.DependsOn()
-    def imprint_current(self, current=None):
+    def current_imprint(self, current=None):
         """
             Current with which the network state is imprinted [nA].
         """
@@ -1059,7 +1036,7 @@ class RapidBMCurrentImprint(RapidBMBase):
         return current
 
     @meta.DependsOn()
-    def wipe_current(self, current=None):
+    def current_wipe(self, current=None):
         """
             Current with which the network state is imprinted [nA].
         """
@@ -1074,18 +1051,72 @@ class RapidBMCurrentImprint(RapidBMBase):
             })
         return current
 
+    @meta.DependsOn()
+    def current_force_spike(self, current=None):
+        """
+            Current with which the network state is imprinted [nA].
+        """
+        if current is None:
+            return 10.
+
+        if hasattr(self, "_force_spike_gen_id"):
+            self._sim.nest.SetStatus(self._force_spike_gen_id, {
+                "amplitude": np.abs(current) * 1000.,
+                "start" : 0.,
+                "stop" : 0.,
+            })
+        return current
+
+
+    def _prepare_imprint(self):
+        log.info("Preparing current imprint") # TODO: DELME
+        binary_state = self.binary_state
+
+        imprint_idx = np.where((binary_state == 0)\
+                + (self.binary_state == 1))[0]
+
+        wipe_start = self.time_current
+        if self.force_spike_before_run:
+            self._sim.nest.SetStatus(self._imprint_wipe_gen_id, {
+                    "start" : self.time_current,
+                    "stop" : self.time_current + self.time_force_spike,
+                })
+            wipe_start += self.time_force_spike
+
+        imprint_start = wipe_start + self.time_wipe
+        imprint_stop = imprint_start + self.time_sim_step
+
+        self._sim.nest.SetStatus(self._imprint_wipe_gen_id, {
+                "start" : wipe_start,
+                "stop" : imprint_start,
+            })
+
+        for state in [0, 1]:
+            imprint_idx = binary_state == state
+
+            self._sim.nest.SetStatus(
+                self._imprint_gen_ids[imprint_idx].tolist(), {
+                "start" : imprint_start,
+                "stop" : imprint_stop,
+                "amplitude" : self.current_imprint * 1000. * (2*state - 1),
+            })
+
     def _create_imprint_circuitry(self):
         # dc generator that inhibits all samplers to imprint a new state
         self._imprint_wipe_gen_id = self._sim.nest.Create("dc_generator")
+        self._force_spike_gen_id = self._sim.nest.Create("dc_generator")
 
         # dc generators that imprint the actual network state
         self._imprint_gen_ids = np.array(
                 self._sim.nest.Create("dc_generator", self.population.size))
 
         # this writes the amplitude to the nest objects
-        self.wipe_current = self.wipe_current
+        self.current_wipe = self.current_wipe
+        self.current_force_spike = self.current_force_spike
 
         self._sim.nest.Connect(self._imprint_wipe_gen_id,
+                self.population.all_cells.tolist(), "all_to_all")
+        self._sim.nest.Connect(self._force_spike_gen_id,
                 self.population.all_cells.tolist(), "all_to_all")
         self._sim.nest.Connect(self._imprint_gen_ids.tolist(),
                 self.population.all_cells.tolist(), "one_to_one")
@@ -1105,7 +1136,7 @@ class RapidBMSpikeImprint(RapidBMBase):
         # the weight with the current binary state is imprinted on the network
         self.imprint_weight_theo = 50.
         self.num_wipe_spikes = 1
-        self.current_time = 0.1 # so that the imprint spikes are set properly
+        self.time_current = 0.1 # so that the imprint spikes are set properly
 
     def _create_imprint_circuitry(self):
         self._imprint_gen_ids = np.array(
@@ -1140,12 +1171,12 @@ class RapidBMSpikeImprint(RapidBMBase):
         imprint_weights = self.imprint_weights_bio * 1000.
         binary_state = self.binary_state
 
-        wipe_time_start = self.current_time + 2*self._sim.simulator.state.dt
-        wipe_times = np.linspace(0., self.wipe_time, self.num_wipe_spikes,
+        wipe_time_start = self.time_current + 2*self._sim.simulator.state.dt
+        wipe_times = np.linspace(0., self.time_wipe, self.num_wipe_spikes,
                 endpoint=False)
         wipe_times += wipe_time_start
 
-        imprint_time = wipe_time_start + self.wipe_time
+        imprint_time = wipe_time_start + self.time_wipe
 
         imprint_idx = np.where((binary_state == 0)\
                 + (self.binary_state == 1))[0]
@@ -1216,7 +1247,7 @@ class MixinRBM(object):
 
     def convert_weights_theo_to_bio(self, weights, out=None):
         if out is None:
-            conv_weights = [np.zeros((2,) + w.shape) for w in weights]
+            conv_weights = [np.zeros(w.shape) for w in weights]
         else:
             conv_weights = out
 
@@ -1230,13 +1261,13 @@ class MixinRBM(object):
             for j, sampler in enumerate(
                     self.samplers[id_offset[i_l+1]:id_offset[i_l+2]]):
                 l_weights[0, :, j] = sampler.convert_weights_theo_to_bio(
-                        l_theo_weights[:, j])
+                        l_theo_weights[0, :, j])
 
             # conversion of second layer to first
             for j, sampler in enumerate(
                     self.samplers[id_offset[i_l]:id_offset[i_l+1]]):
                 l_weights[1, j, :] = sampler.convert_weights_theo_to_bio(
-                        l_theo_weights[j, :])
+                        l_theo_weights[1, j, :])
 
         return conv_weights
 
@@ -1275,6 +1306,19 @@ class MixinRBM(object):
 
         return delays
 
+    def _format_weights(self, weights):
+        orig_weights = weights
+        upl = self.num_units_per_layer
+        nupl = np.array(self.num_units_per_layer)
+        offset = nupl[1:] * nupl[:-1] * 2
+        offset = np.r_[0, np.cumsum(offset)]
+
+        weights = []
+        for i in xrange(self.num_layers-1):
+            weights.append(orig_weights[offset[i]:offset[i+1]].reshape(2,
+                upl[i], upl[i+1]))
+        return weights
+
     def _create_connectivity(self, connectivity_matrix=None):
         # TODO: Add support for TSO
         if self.saturating_synapses_enabled:
@@ -1293,15 +1337,17 @@ class MixinRBM(object):
 
         gids = self._sampler_gids
 
-
         for i_l in xrange(self.num_layers-1):
-            log.info("Creating connections from layers {} <-> {}".format(i_l, i_l+1))
+            log.info("Creating connections from layers {} <-> {}".format(
+                i_l, i_l+1))
             nest.Connect(
                     gids[offset[i_l]:offset[i_l+1]],
-                    gids[offset[i_l+1]:offset[i_l+2]], 'all_to_all')
+                    gids[offset[i_l+1]:offset[i_l+2]], 'all_to_all',
+                    syn_spec={"model" : self.nest_synapse_type})
             nest.Connect(
                     gids[offset[i_l+1]:offset[i_l+2]],
-                    gids[offset[i_l]:offset[i_l+1]], 'all_to_all')
+                    gids[offset[i_l]:offset[i_l+1]], 'all_to_all',
+                    syn_spec={"model" : self.nest_synapse_type})
 
         self._nest_connections = nest.GetConnections(gids, gids)
 
@@ -1314,7 +1360,6 @@ class MixinRBM(object):
 
         log.info("Done connecting.")
 
-
     def _check_weight_matrix(self, weights):
 
         if not isinstance(weights, list):
@@ -1325,7 +1370,7 @@ class MixinRBM(object):
             all_weights = []
 
             for i in xrange(self.num_layers-1):
-                weights = np.empty( (self.num_units_per_layer[i],
+                weights = np.empty((2, self.num_units_per_layer[i],
                             self.num_units_per_layer[i+1]))
                 weights.fill(scalar_weight)
 
@@ -1334,12 +1379,29 @@ class MixinRBM(object):
             return all_weights
 
         for i, w in enumerate(weights):
-            expected_shape = (self.num_units_per_layer[i],
+            expected_shape = (2, self.num_units_per_layer[i],
                     self.num_units_per_layer[i+1])
             assert w.shape == expected_shape,\
-                    "Weight matrix shape {}, expected {} (layer {} <-> {})".format(
-                            w.shape, expected_shape, i, i+1)
+                    "Weight matrix shape {}, expected {} (layer {} <-> {})"\
+                    .format(w.shape, expected_shape, i, i+1)
         return weights
+
+    def _write_weights(self, weights, kind="theo"):
+        # TODO Convert theoretical weights as well before writing
+        assert self.is_created
+        if kind == "theo":
+            weight_theo = weights
+            weight_bio = self.convert_weights_theo_to_bio(weight_theo)
+        elif kind == "bio":
+            weight_bio = weights
+            weight_theo = self.convert_weights_bio_to_theo(weight_bio)
+        else:
+            raise ValueError("Invalid weight type supplied.")
+
+        data = [{"weight": w_b, "weight_theo" : w_t}
+                for lwb, lwt in it.chain(*it.izip(weight_bio, weight_theo))
+                for w_b, w_t in it.izip(lwb.reshape(-1), lwt.reshape(-1))]
+        self._sim.nest.SetStatus(self._nest_connections, data)
 
 @meta.HasDependencies
 class RapidRBMCurrentImprint(MixinRBM, RapidBMCurrentImprint):

@@ -8,6 +8,7 @@ from . import fit
 from . import meta
 from . import buildingblocks as bb
 from . import cutils
+from . import cells
 
 import itertools as it
 import numpy as np
@@ -16,12 +17,17 @@ import numpy as np
 @meta.HasDependencies
 class LIFsampler(object):
 
-    supported_pynn_neuron_models = ["IF_curr_exp", "IF_cond_exp"]
+    supported_pynn_neuron_models = [
+            "IF_curr_exp",
+            "IF_cond_exp",
+            "IF_cond_exp_cd",
+            "IF_curr_exp_cd",
+        ]
 
-    def __init__(self, param_calib, sim_name="pyNN.nest", silent=False):
+    def __init__(self, sampler_config, sim_name="pyNN.nest", silent=False):
         """
-            param_calib:
-                sbs.db.NeuronParameters or sbs.db.ParameterCalibration
+            sampler_config:
+                sbs.db.NeuronParameters or sbs.db.SamplerConfiguration
         """
         self.silent = silent
 
@@ -30,21 +36,20 @@ class LIFsampler(object):
 
         self.sim_name = sim_name
 
-        if isinstance(param_calib, db.ParameterCalibration):
-            self.calibration = param_calib.calibration
-            self.neuron_parameters = param_calib.neuron_parameters
+        if isinstance(sampler_config, db.SamplerConfiguration):
+            self.calibration = sampler_config.calibration
+            self.neuron_parameters = sampler_config.neuron_parameters
+
+        elif isinstance(sampler_config, db.NeuronParameters):
+            self.neuron_parameters = sampler_config
+            self.calibration = None
+
+        else:
+            raise Exception("Invalid sampler_config supplied.")
 
         self._ensure_model_is_supported(self.neuron_parameters.pynn_model)
 
         self.bias_theo = 0.
-
-        # the loaded calibration object from the database
-        # which will be used for adjusting neuron parameters
-        # as well as determining weights
-        self.calibration = None
-
-        # the sources used in calibration
-        self.source_config = None
 
         self.free_vmem_trace = None
 
@@ -100,7 +105,7 @@ class LIFsampler(object):
             return value
 
     def bias_theo_to_bio(self, bias):
-        return bias * self.calibration.alpha
+        return bias * self.calibration.fit.alpha
 
     def bias_bio_to_theo(self, bias):
         return bias / self.calibration.alpha
@@ -110,13 +115,13 @@ class LIFsampler(object):
         self.population.set(v_rest=self.get_v_rest_from_bias())
 
     @meta.DependsOn()
-    def dist_theo(self, value):
+    def dist_theo(self, value=None):
         return value
 
     @meta.DependsOn("dist_theo")
     def alpha_theo(self):
         # estimate for syn weight factor from theo to LIF
-        alpha_theo = .25 * np.sqrt(2. * np.pi) * self.dist_theo.dist_theo
+        alpha_theo = .25 * np.sqrt(2. * np.pi) * self.dist_theo.std
         return alpha_theo
 
     @meta.DependsOn()
@@ -218,27 +223,34 @@ class LIFsampler(object):
         calibration.V_rest_min = final_pre_calib.V_rest_min
         calibration.V_rest_max = final_pre_calib.V_rest_max
 
-        self._calc_distribution_theo()
-        # self._estimate_alpha()
+        log.info("Taking {} samples from {:.3f}mV to {:.3f}mV…".format(
+                calibration.num_samples,
+                calibration.V_rest_min,
+                calibration.V_rest_max
+            ))
 
         # do final, proper calibration
-        calibparams = db.ParameterCalibration(
+        calibparams = db.SamplerConfiguration(
                 calibration=calibration,
                 neuron_parameters=self.neuron_parameters)
 
-        self.calibration.samples_p_on = gather_calibration_data(
-            calib_params=calibparams)
+        self.calibration = calibration
+        self.calibration.samples_p_on = gather_calibration_data(calibparams)
 
         if not self.silent:
             log.info("Calibration data gathered, performing fit.")
 
+        self._calc_distribution_theo()
+        # self._estimate_alpha()
+
         self.calibration.fit = db.Fit()
         self.calibration.fit.v_p05, self.calibration.fit.alpha =\
             fit.fit_sigmoid(
-                samples_v_rest=self.calibration.get_samples_v_rest(),
+                self.calibration.get_samples_v_rest(),
                 self.calibration.samples_p_on,
                 guess_p05=self.neuron_parameters.v_thresh,
                 guess_alpha=self.alpha_theo)
+
 
         if not self.silent:
             log.info("Fitted alpha: {:.3f}".format(self.calibration.fit.alpha))
@@ -265,6 +277,7 @@ class LIFsampler(object):
                 source_config=self.calibration.source_config,
                 sim_name=self.sim_name
             )
+        self.free_vmem_trace_dt = dt
 
     def get_all_source_parameters(self):
         """
@@ -286,7 +299,7 @@ class LIFsampler(object):
         dist = getattr(utils, "{}_distribution".format(self.pynn_model))
         # TODO:
         args = self.get_all_source_parameters()
-        if not self.calibration.fit is None:
+        if self.calibration.fit is None or  not self.calibration.fit.is_valid():
             if not self.silent:
                 log.info("Computing vmem distribution ONLY from supplied neuron "
                      "parameters!")
@@ -315,7 +328,7 @@ class LIFsampler(object):
                 # (cm - g_tot * tau[is_exc_int]) *\
                 # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
                     # + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                # ) / self.alpha_fitted * g_tot / self.neuron_params.g_l 
+                # ) / self.calibration.fit.alpha * g_tot / self.neuron_params.g_l 
         # elif self.pynn_model == "IF_curr_exp":
             # theo_weights = weights / (cm - g_tot * tau[is_exc_int]) *\
                 # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
@@ -331,7 +344,7 @@ class LIFsampler(object):
 
     @meta.DependsOn("calibration", "bias_theo", "bias_bio")
     def factor_weights_theo_to_bio_inh(self):
-        mean, std, g_tot = self.get_vmem_dist_theo()
+        mean, std, g_tot, tau_eff = self.get_vmem_dist_theo()
         return self._calc_factor_weights_theo_to_bio(
                 is_excitatory=False,
                 tau=self.neuron_parameters.tau_syn_I
@@ -390,6 +403,13 @@ class LIFsampler(object):
         theo_weights = weights / factor[is_exc_int]
 
         return theo_weights
+
+    def write_config(self, filename):
+        if not self.silent:
+            log.info("Writing sampler configuration…")
+        db.SamplerConfiguration(calibration=self.calibration,
+            neuron_parameters=self.neuron_parameters).write(filename)
+
 
     ##################
     # PYNN methods #
@@ -459,7 +479,7 @@ class LIFsampler(object):
         estim_sigmoid = utils.sigmoid_trans(xdata, v_thresh, self.alpha_theo)
 
         fitted_p_on = utils.sigmoid_trans(samples_v_rest, v_p05,
-                self.alpha_fitted)
+                self.calibration.fit.alpha)
 
         if plot_v_dist_theo:
             ax.plot(xdata, estim_dist_v_thresh,
@@ -499,7 +519,7 @@ class LIFsampler(object):
             ax.axvline(v_thresh, ls="--", label="$v_{thresh}$", c="r")
             ax.axvline(v_p05, ls="--", label="$v_{p=0.5}$", c="b")
 
-        mean, std, g_tot = self.get_vmem_dist_theo()
+        mean, std, g_tot, tau_eff = self.get_vmem_dist_theo()
         max_bin = counts.max()
 
         ax.axvline(mean, ls="-", c="r", label="$\\bar{v}_{theo}$")
@@ -525,9 +545,10 @@ class LIFsampler(object):
         assert self.has_free_vmem_trace
         autocorr = cutils.autocorr(self.free_vmem_trace, max_step_diff)
 
-        ax.plot(autocorr)
+        ax.plot(np.arange(1, max_step_diff+1)
+                * self.free_vmem_trace_dt, autocorr)
 
-        ax.set_xlabel("$\Delta$ T [steps]")
+        ax.set_xlabel("$\Delta$ T [ms]")
         ax.set_ylabel("Correlation")
         log.info("Done")
 
@@ -537,26 +558,26 @@ class LIFsampler(object):
     ###########################
 
     def _calc_factor_weights_theo_to_bio(self, is_excitatory, tau):
-        mean, std, g_tot = self.get_vmem_dist_theo()
+        mean, std, g_tot, tau_eff = self.get_vmem_dist_theo()
         cm = self.neuron_parameters.cm
 
-        if self.pynn_model == "IF_cond_exp":
+        if self.pynn_model.startswith("IF_cond_exp"):
             if is_excitatory:
                 delta_E = self.neuron_parameters.e_rev_E - mean
             else:
                 delta_E = mean - self.neuron_parameters.e_rev_I
             # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
             # from v1 code, --obreitwi, 19-12-13 19:44:27)
-            factor = self.alpha_fitted * self.neuron_parameters.g_l\
-                    / self.calibration.g_tot /\
+            factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
+                    / g_tot /\
                 (delta_E / (cm - g_tot * tau) *\
                     (- cm / g_tot * (np.exp(- tau * g_tot / cm)-1.)\
                         + tau * (np.exp(-1.) - 1.)\
                     )\
                 )
 
-        elif self.pynn_model == "IF_curr_exp":
-            factor = self.alpha_fitted /\
+        elif self.pynn_model.startswith("IF_curr_exp"):
+            factor = self.calibration.fit.alpha /\
                 (1. / (cm - g_tot * tau) *\
                     (- cm / g_tot * (np.exp(-tau*g_tot/cm) - 1.)\
                         + tau * (np.exp(-1.) - 1.)
@@ -582,15 +603,14 @@ class LIFsampler(object):
         pre_calib = db.PreCalibration(
             V_rest_min=-80., V_rest_max=-20.,
             dV=0.2,
-            lower_bound=0.1, upper_bound=0.9,
+            lower_bound=0.05, upper_bound=0.9,
             duration=1000., #  time spent when scanning for the sigmoid
             max_search_steps=20,
         )
+        for k in ["sim_name", "burn_in_time", "dt", "source_config"]:
+            setattr(pre_calib, k, getattr(calibration, k))
 
-        for k,v in it.chain(
-                ((k,v) for k,v in calibration.get_dict().iteritems()
-                    if hasattr(initial_params, k)),
-                pre_calibration_parameters.iteritems()):
+        for k,v in pre_calibration_parameters.iteritems():
             setattr(pre_calib, k, v)
 
         orig_pre_calib = pre_calib.copy()
@@ -600,7 +620,7 @@ class LIFsampler(object):
         samples_v_rest = []
         samples_p_on = []
 
-        pre_param_calib = db.ParameterCalibration(
+        pre_sampler_config = db.SamplerConfiguration(
                 neuron_parameters=self.neuron_parameters,
                 calibration=pre_calib)
 
@@ -612,17 +632,17 @@ class LIFsampler(object):
         search_steps = 0
         while search_steps < pre_calib.max_search_steps:
             if not upper_bound_found:
-                samples_p_on.append(gather_calibration_data(pre_para_calib))
+                samples_p_on.append(gather_calibration_data(pre_sampler_config))
                 samples_v_rest.append(pre_calib.get_samples_v_rest())
 
             else:
-                samples_p_on.insert(0, gather_calibration_data(pre_para_calib))
+                samples_p_on.insert(0, gather_calibration_data(orig_pre_calib))
                 samples_v_rest.insert(0, pre_calib.get_samples_v_rest())
 
-            upper_bound_found = any(((spon > pre_param_calib.upper_bound).any()
+            upper_bound_found = any(((spon>pre_calib.upper_bound).any()
                 for spon in reversed(samples_p_on)))
 
-            lower_bound_found = any(((spon < pre_param_calib.lower_bound).any()
+            lower_bound_found = any(((spon<pre_calib.lower_bound).any()
                 for spon in samples_p_on))
 
             if upper_bound_found and lower_bound_found:
@@ -631,20 +651,20 @@ class LIFsampler(object):
             # adjust the next search range and make sure we are scanning nothing
             # twice
             if not upper_bound_found:
-                pre_calib.V_rest_min = max(orig_pre_cailb.V_rest_min,
+                pre_calib.V_rest_min = max(orig_pre_calib.V_rest_min,
                         pre_calib.V_rest_min) + V_range
-                pre_calib.V_rest_max = max(orig_pre_cailb.V_rest_max,
+                pre_calib.V_rest_max = max(orig_pre_calib.V_rest_max,
                         pre_calib.V_rest_max) + V_range
             else:
-                pre_calib.V_rest_min = min(orig_pre_cailb.V_rest_min,
+                pre_calib.V_rest_min = min(orig_pre_calib.V_rest_min,
                         pre_calib.V_rest_min) - V_range
-                pre_calib.V_rest_max = min(orig_pre_cailb.V_rest_max,
+                pre_calib.V_rest_max = min(orig_pre_calib.V_rest_max,
                         pre_calib.V_rest_max) - V_range
 
             search_steps += 1
 
-        samples_p_on = np.hstack(*samples_p_on)
-        samples_v_rest = np.hstack(*samples_v_rest)
+        samples_p_on = np.hstack(samples_p_on)
+        samples_v_rest = np.hstack(samples_v_rest)
 
         idx = np.where((samples_p_on < pre_calib.upper_bound)
                 * (samples_p_on > pre_calib.lower_bound))[0]

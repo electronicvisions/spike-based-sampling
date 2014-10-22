@@ -19,7 +19,7 @@ def create_sources(sim, source_config, duration):
     sources = None
     # Note: poisson_generator takes "stop", spike source poisson takes
     # "duration"!
-    if isinstance(source_config, db.PoissonSourceConfig):
+    if isinstance(source_config, db.PoissonSourceConfiguration):
         source_params = {"start" : 0.}
         source_t = sim.SpikeSourcePoisson
         source_params["duration"] = duration
@@ -35,8 +35,9 @@ def create_sources(sim, source_config, duration):
         log.info("Created {} sources.".format(num_sources))
 
     else:
-        log.error("Source configuration of type {} not unkown.".format(
+        log.error("Source configuration of type {} unkown.".format(
             source_config.__class__.__name__))
+        from pudb import set_trace; set_trace()
 
     return sources
 
@@ -47,12 +48,12 @@ def connect_sources(sim, source_config, sources, target):
     """
     projections = None
 
-    if isinstance(source_config, db.PoissonSourceConfig):
+    if isinstance(source_config, db.PoissonSourceConfiguration):
         projections = {}
 
         column_names = ["weight"]
 
-        is_exc = np.array(source_config.weighs > 0., dtype=int)
+        is_exc = np.array(source_config.weights > 0., dtype=int)
 
         receptor_types = ["inhibitory", "excitatory"]
 
@@ -101,7 +102,7 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
     # _ps = _per_sampler
     for sampler in samplers:
         assert isinstance(sampler.calibration.source_config,
-                db.PoissonSourceConfig)
+                db.PoissonSourceConfiguration)
 
     num_sources_per_sampler = np.array((len(s.calibration.source_config.rates)
         for s in samplers))
@@ -117,7 +118,7 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
             idx -= offset_per_sampler[sampler]
         return sampler
 
-    rates = np.hstack(*(s.calibration.source_config.rates for s in samplers))
+    rates = np.hstack((s.calibration.source_config.rates for s in samplers))
 
     uniq_rates, idx_to_src_id = np.unique(rates, return_inverse=True)
 
@@ -137,7 +138,7 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
 
     cur_source = 0
     for i, sampler in enumerate(samplers):
-        for j, weight in sampler.calibration.source_config.weights:
+        for j, weight in enumerate(sampler.calibration.source_config.weights):
             connections[conn_type[weight > 0]].append(
                     (idx_to_src_id[cur_source], i, np.abs(weight)))
             cur_source += 1
@@ -145,7 +146,7 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
     projections = {}
     for ct in conn_type:
         projections[ct] = sim.Projection(
-                sources["poisson"], population,
+                sources, population,
                 receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
                 synapse_type=sim.StaticSynapse(),
                 connector=sim.FromListConnector(connections[ct],

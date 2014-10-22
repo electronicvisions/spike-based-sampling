@@ -5,6 +5,8 @@ import json
 import os.path as osp
 import numpy as np
 
+import collections as c
+
 from .logcfg import log
 
 def setup(*args, **kwargs):
@@ -48,7 +50,7 @@ class Data(object):
                     ensure_ascii=False, indent=2)
 
     def copy(self):
-        self.__class__(**self._to_dict())
+        return self.__class__(**self._to_dict())
 
     def _empty(self):
         """
@@ -59,7 +61,8 @@ class Data(object):
                 setattr(self, d, None)
 
     def _to_dict(self, with_type=True):
-        dikt = {d: self._convert_attr(d, with_type=with_type) for d in self.data_attribute_types}
+        dikt = {d: self._convert_attr(d, with_type=with_type)
+                for d in self.data_attribute_types}
         if with_type:
             dikt["_type"] = self.__class__.__name__
         return dikt
@@ -83,8 +86,8 @@ class Data(object):
 
             d = dikt.get(name, None)
 
-            if d is not None and issubclass(desired_type, Data):
-                if d["_type"] != desired_type.__class__.__name__:
+            if isinstance(d, dict) and issubclass(desired_type, Data):
+                if d["_type"] != desired_type.__name__:
                     new_desired_type = globals()[d["_type"]]
                     assert issubclass(new_desired_type, desired_type)
                     desired_type = new_desired_type
@@ -113,8 +116,26 @@ class NeuronParameters(Data):
         return dikt
 
 
-class NeuronParametersConductance(NeuronParameters):
+class NeuronParametersConductanceExponential(NeuronParameters):
     pynn_model = "IF_cond_exp"
+
+    data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
+        "cm"         : float, # nF  Capacity of the membrane
+        "tau_m"      : float, # ms  Membrane time constant
+        "tau_refrac" : float, # ms  Duration of refractory period
+        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
+        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
+        "e_rev_E"    : float, # mV  Reversal potential for exc inpt
+        "e_rev_I"    : float, # mV  Reversal potential for inh inpt
+        "i_offset"   : float, # nA  Offset current
+        "v_rest"     : float, # mV  Rest potential
+        "v_reset"    : float, # mV  Reset potential after a spike
+        "v_thresh"   : float, # mV  Spike threshold
+    }.items())
+
+
+class NeuronParametersConductanceAlpha(NeuronParameters):
+    pynn_model = "IF_cond_alpha"
 
     data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
         "cm"         : float, # nF  Capacity of the membrane
@@ -147,11 +168,27 @@ class NeuronParametersCurrent(NeuronParameters):
     }.items())
 
 
-class SourceConfig(Data):
+class NeuronParametersCurrentExponential(NeuronParameters):
+    pynn_model = "IF_curr_alpha"
+
+    data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
+        "cm"         : float, # nF  Capacity of the membrane
+        "tau_m"      : float, # ms  Membrane time constant
+        "tau_refrac" : float, # ms  Duration of refractory period
+        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
+        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
+        "i_offset"   : float, # nA  Offset current
+        "v_rest"     : float, # mV  Rest potential
+        "v_reset"    : float, # mV  Reset potential after a spike
+        "v_thresh"   : float, # mV  Spike threshold
+    }.items())
+
+
+class SourceConfiguration(Data):
     pass
 
 
-class PoissonSourceConfig(SourceConfig):
+class PoissonSourceConfiguration(SourceConfiguration):
     """
         Positive weights: excitatory
         Negative weights: inhibitory
@@ -167,6 +204,9 @@ class Fit(Data):
         "alpha" : float,
         "v_p05" : float,
     }
+
+    def is_valid(self):
+        return self.alpha is not None and self.v_p05 is not None
 
 
 class Calibration(Data):
@@ -184,7 +224,7 @@ class Calibration(Data):
         "samples_p_on" : np.ndarray,
 
         "fit" : Fit,
-        "source_config" : SourceConfig,
+        "source_config" : SourceConfiguration,
     }
 
     def get_samples_v_rest(self):
@@ -193,7 +233,7 @@ class Calibration(Data):
                 endpoint=True)
 
 
-class ParameterCalibration(Data):
+class SamplerConfiguration(Data):
     data_attribute_types = {
         "neuron_parameters" : NeuronParameters,
         "calibration" : Calibration,
@@ -211,17 +251,22 @@ class PreCalibration(Data):
         "dt" : float,
         "burn_in_time" : float,
 
+        "max_search_steps" : int,
+
+        "lower_bound": float,
+        "upper_bound": float,
+
         "V_rest_min" : float,
         "V_rest_max" : float,
         "dV" : float,
 
-        "source_config" : SourceConfig,
+        "source_config" : SourceConfiguration,
     }
 
     def get_samples_v_rest(self):
-        return np.linspace(
-                self.V_rest_min, self.V_rest_max, self.num_samples,
-                endpoint=True)
+        return np.arange(
+                self.V_rest_min, self.V_rest_max+self.dV, self.dV)
+
 
 class VmemDistribution(Data):
     """
@@ -235,25 +280,4 @@ class VmemDistribution(Data):
         "tau_eff" : float,
     }
 
-
-class InitialVmemSearch(Data):
-    data_attribute_types = {
-        "V_rest_min" : float,
-        "V_rest_max" : float,
-        "dV" : float,
-        "pre_sim_time" : float,
-
-        "lower_bound" : float,
-        "upper_bound" : float,
-
-        "max_search_steps" : int,
-
-        "sim_name" : str,
-
-        "duration" : float,
-        "dt" : float,
-        "burn_in_time" : float,
-
-        "source_config" : SourceConfig,
-    }
 
