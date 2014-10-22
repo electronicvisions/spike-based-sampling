@@ -19,6 +19,9 @@ from . import cutils
 from . import gather_data
 from . import meta
 from . import buildingblocks as bb
+from . import cells
+
+cells.patch_pynn()
 
 @meta.HasDependencies
 class BoltzmannMachineBase(object):
@@ -275,6 +278,21 @@ class BoltzmannMachineBase(object):
     # PYNN methods #
     ################
 
+    def create_no_return(self, sim_setup_kwargs=None, *args, **kwargs):
+        """
+            Runs self.create(*args, **kwargs) but does not return the created
+            PyNN objects.
+
+            This is only useful when wrapping the class in another subprocess.
+
+            If sim_setup_kwargs is not None, the dictionary will be used to
+            setup PyNN.
+        """
+        if sim_setup_kwargs is not None:
+            exec "import {} as sim".format(self.sim_name) in globals(), locals()
+            sim.setup(**sim_setup_kwargs)
+        self.create(*args, **kwargs)
+
     def create(self, duration=None, _nest_optimization=True,
             _nest_source_model=None, _nest_source_model_kwargs=None):
         """
@@ -308,6 +326,8 @@ class BoltzmannMachineBase(object):
         _nest_optimization = _nest_optimization and hasattr(sim, "nest")
 
         log.info("Setting up population for duration: {}s".format(duration))
+
+        log.info("PyNN-model: {}".format(self.samplers[0].pynn_model))
         population = sim.Population(self.num_samplers,
                 getattr(sim, self.samplers[0].pynn_model)())
 
@@ -329,7 +349,7 @@ class BoltzmannMachineBase(object):
                     source_model=_nest_source_model,
                     source_model_kwargs=_nest_source_model_kwargs)
 
-        self.population = population 
+        self.population = population
 
         return self.population, None
 
@@ -758,7 +778,6 @@ class RapidBMBase(BoltzmannMachineBase):
         # model/recon
         self.update_factors = np.zeros((self.num_samplers, 3))
 
-
     def create(self, connectivity_matrix=None, **kwargs):
         """
             (See also: BoltzmannMachineBase.create)
@@ -856,7 +875,7 @@ class RapidBMBase(BoltzmannMachineBase):
 
     def update_samplers(self):
         update = self.get_sampler_update()
-        self._sim.nest.SetStatus(self._nest_connections, update)
+        self._sim.nest.SetStatus(self.population.all_cells.tolist(), update)
 
     ##############
     # Properties #

@@ -4,7 +4,12 @@
 # Special training methods
 # Make use of some wrappers from SEMf
 
-from semf import misc as m
+from SEMf import misc as m
+
+from ..logcfg import log
+from ..network import RapidRBMCurrentImprint
+
+RapidRBMCurrentImprint = m.ClassInSubprocess(RapidRBMCurrentImprint)
 
 
 def train_rbm(
@@ -14,10 +19,12 @@ def train_rbm(
         bm_init_kwargs=None, # dict
         bm_settings=None,    # dict
     ):
+    assert len(training_data.shape) == 3
 
     bm_default_settings = {
-            "wipe_current" : 10.,
-            "imprint_current" : 10.,
+            "current_wipe" : 10.,
+            "current_imprint" : 10.,
+            "current_force_spike" : 10.,
         }
 
 

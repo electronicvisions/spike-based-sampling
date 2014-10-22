@@ -152,8 +152,8 @@ class NeuronParametersConductanceAlpha(NeuronParameters):
     }.items())
 
 
-class NeuronParametersCurrent(NeuronParameters):
-    pynn_model = "IF_cond_exp"
+class NeuronParametersCurrentExponential(NeuronParameters):
+    pynn_model = "IF_curr_exp"
 
     data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
         "cm"         : float, # nF  Capacity of the membrane
@@ -168,7 +168,7 @@ class NeuronParametersCurrent(NeuronParameters):
     }.items())
 
 
-class NeuronParametersCurrentExponential(NeuronParameters):
+class NeuronParametersCurrentAlpha(NeuronParameters):
     pynn_model = "IF_curr_alpha"
 
     data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
