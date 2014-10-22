@@ -25,6 +25,7 @@ from .logcfg import log
 
 __all__ = [
     "IF_cond_exp_distribution",
+    "IF_cond_alpha_distribution",
     "IF_curr_exp_distribution",
     "IF_cond_exp_cd_distribution",
     "IF_curr_exp_cd_distribution",
@@ -64,7 +65,7 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     # calculate exc, inh and total conductance
 
     g_exc = np.dot(weights_exc, rates_exc) * tau_syn_E
-    g_inh = np.dot(-weights_inh, rates_inh) * tau_syn_I
+    g_inh = np.dot(weights_inh, rates_inh) * tau_syn_I
     g_tot = g_exc + g_inh + g_l
 
     # calculate effective (mean) membrane potential and time constant
@@ -92,6 +93,71 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
 
     var = np.dot(rates_exc, S_exc**2) * var_tau_e\
         + np.dot(rates_inh, S_inh**2) * var_tau_i
+
+    return v_eff, np.sqrt(var), g_tot, tau_eff
+
+def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
+        e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm,
+        **sink): #sink is just to absorb unused parameter names
+    """
+    High Conductance State distribution
+
+    Source parameters are expected to be numpy arrays.
+    Unit for rates is Hz!
+
+    All parameters are pynn parameters.
+
+    g_l: leak_conductance
+    """
+    # convert rates to kHz
+    rates_exc /= 1000.
+    rates_inh /= 1000.
+
+    # calculate exc, inh and total conductance
+
+    g_exc = np.dot(weights_exc, rates_exc) * tau_syn_E * np.exp(1.)
+    g_inh = np.dot(weights_inh, rates_inh) * tau_syn_I * np.exp(1.)
+    g_tot = g_exc + g_inh + g_l
+
+    # calculate effective (mean) membrane potential and time constant
+
+    tau_eff = cm / g_tot
+    v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + v_rest * g_l) / g_tot
+
+    log.debug("tau_eff: {:.3f} ms".format(tau_eff))
+
+    ####### calculate variance of membrane potential #######
+
+    tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
+    tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
+
+    # s for sum
+    tau_s_exc = 1. / (1. / tau_syn_E + 1. / tau_eff)
+    tau_s_inh = 1. / (1. / tau_syn_I + 1. / tau_eff)
+
+    S_exc = weights_exc * (e_rev_E - v_eff) * tau_g_exc / tau_eff / g_tot
+    S_inh = weights_inh * (e_rev_I - v_eff) * tau_g_inh / tau_eff / g_tot
+
+    S_exc *= np.exp(1.)
+    S_inh *= np.exp(1.)
+
+    # var_tau_e = tau_syn_E/2. + tau_eff/2.\
+            # - 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E)
+
+    # var_tau_i = tau_syn_I/2. + tau_eff/2.\
+            # - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I)
+
+    var_tau_exc = tau_syn_E**3 / 4.\
+            + 2. * tau_g_exc * (tau_syn_E**2 / 4. - tau_s_exc**2)\
+            + tau_g_exc**2 * ((tau_syn_E + tau_eff)/2. - 2*tau_s_exc)
+    var_tau_inh = tau_syn_I**3 / 4.\
+            + 2. * tau_g_inh * (tau_syn_I**2 / 4. - tau_s_inh**2)\
+            + tau_g_inh**2 * ((tau_syn_I + tau_eff)/2. - 2*tau_s_inh)
+
+    # log.info("v_tau_e/v_tau_i: {} / {}".format(v_tau_e, v_tau_i))
+
+    var = np.dot(rates_exc, S_exc**2) * var_tau_exc\
+        + np.dot(rates_inh, S_inh**2) * var_tau_inh
 
     return v_eff, np.sqrt(var), g_tot, tau_eff
 
@@ -141,8 +207,63 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
 
     return v_eff, np.sqrt(var), g_tot, tau_eff
 
+def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
+        v_rest, tau_syn_E, tau_syn_I, g_l, cm,
+        **sink): #sink is just to absorb unused parameter names
+    """
+        Vmem distribution
+        Unit for rates is Hz!
+
+        All parameters are pynn parameters.
+
+        g_l : leak conductance in µS
+    """
+    # convert rates to kHz
+    rates_exc /= 1000.
+    rates_inh /= 1000.
+
+    # calculate total current and conductance
+
+    I_exc = np.dot(weights_exc, rates_exc) * tau_syn_E * np.exp(1.)
+    I_inh = np.dot(weights_inh, rates_inh) * tau_syn_I * np.exp(1.)
+    g_tot = g_l
+
+    # calculate effective (mean) membrane potential and time constant #######
+
+    tau_eff = cm / g_tot
+    v_eff = (I_exc + I_inh) / g_l + v_rest
+
+    log.info("tau_eff: {:.3f}".format(tau_eff))
+
+    # calculate variance of membrane potential
+
+    tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
+    tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
+
+    # s for sum
+    tau_s_exc = 1. / (1. / tau_syn_E + 1. / tau_eff)
+    tau_s_inh = 1. / (1. / tau_syn_I + 1. / tau_eff)
+
+    S_exc = I_exc * tau_g_exc / tau_eff / g_tot
+    S_inh = I_inh * tau_g_inh / tau_eff / g_tot
+
+    var_tau_exc = tau_syn_E**3 / 4.\
+            + 2. * tau_g_exc * (tau_syn_E**2 / 4. - tau_s_exc**2)\
+            + tau_g_exc**2 * ((tau_syn_E + tau_eff)/2. - 2*tau_s_exc)
+    var_tau_inh = tau_syn_I**3 / 4.\
+            + 2. * tau_g_inh * (tau_syn_I**2 / 4. - tau_s_inh**2)\
+            + tau_g_inh**2 * ((tau_syn_I + tau_eff)/2. - 2*tau_s_inh)
+
+    var = np.dot(rates_exc, S_exc**2) * var_tau_exc\
+        + np.dot(rates_inh, S_inh**2) * var_tau_inh
+
+    return v_eff, np.sqrt(var), g_tot, tau_eff
+
 IF_cond_exp_cd_distribution = IF_cond_exp_distribution
 IF_curr_exp_cd_distribution = IF_curr_exp_distribution
+
+IF_cond_alpha_cd_distribution = IF_cond_alpha_distribution
+IF_curr_alpha_cd_distribution = IF_curr_alpha_distribution
 
 
 def sigmoid(x):

@@ -767,6 +767,7 @@ class RapidBMBase(BoltzmannMachineBase):
 
         self.time_sim_step = 30. # ms
         self.time_wipe = 50. # time between silence and imprint
+        self.time_imprint = 30. # how long are the 
 
         self._ensure_cd_pynn_models()
 
@@ -1421,6 +1422,7 @@ class MixinRBM(object):
                 for lwb, lwt in it.chain(*it.izip(weight_bio, weight_theo))
                 for w_b, w_t in it.izip(lwb.reshape(-1), lwt.reshape(-1))]
         self._sim.nest.SetStatus(self._nest_connections, data)
+
 
 @meta.HasDependencies
 class RapidRBMCurrentImprint(MixinRBM, RapidBMCurrentImprint):

@@ -22,6 +22,10 @@ class LIFsampler(object):
             "IF_cond_exp",
             "IF_cond_exp_cd",
             "IF_curr_exp_cd",
+            "IF_curr_alpha",
+            "IF_cond_alpha",
+            "IF_cond_alpha_cd",
+            "IF_curr_alpha_cd",
         ]
 
     def __init__(self, sampler_config, sim_name="pyNN.nest", silent=False):
