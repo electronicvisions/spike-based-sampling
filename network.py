@@ -19,9 +19,9 @@ from . import cutils
 from . import gather_data
 from . import meta
 from . import buildingblocks as bb
-from . import cells
+# from . import cells
 
-cells.patch_pynn()
+# cells.patch_pynn()
 
 @meta.HasDependencies
 class BoltzmannMachineBase(object):
@@ -444,7 +444,8 @@ class ThoroughBM(BoltzmannMachineBase):
             # weights[np.logical_not(weight_is[wt])] = np.NaN
 
             if wt == "inh":
-                weights *= -1
+                weights *= (np.array([("_curr_" in s.pynn_model)
+                    for s in self.samplers], dtype=int) * 2) - 1
 
             if self.saturating_synapses_enabled and _nest_optimization:
                 # using native nest synapse model, we need to take care of
@@ -768,11 +769,16 @@ class RapidBMBase(BoltzmannMachineBase):
         self.time_sim_step = 30. # ms
         self.time_wipe = 50. # time between silence and imprint
         self.time_imprint = 30. # how long are the 
+        self._update_num = 0
+
+        # has to be non-None for the propagation to binary state to work
+        self.last_spiketimes = np.zeros(self.num_samplers) - 1000.
 
         self._ensure_cd_pynn_models()
 
-        # needed for the CD based updates
-        self.force_spike_before_run = True
+        # needed for the CD based updates (set automatically when update is
+        # queued)
+        self._force_spike_before_run = False
         self.time_force_spike = 30.
 
         # shape: (num_factors, 2) first is eta, second is data, third is
@@ -815,6 +821,20 @@ class RapidBMBase(BoltzmannMachineBase):
 
         return self.population, None
 
+    def queue_update(self):
+        """
+            Indicate that the synapses should update in the next run.
+        """
+        self._force_spike_before_run = True
+        self._update_num += 1
+
+    def continue_run(self, runtime):
+        """
+            Continue running the network for the specified time without
+            imprinting/wiping any state.
+        """
+        self.time_current = self._sim.run_for(runtime)
+
     def run(self):
         """
             Run the network for self.time_sim_step milliseconds; after that the
@@ -829,6 +849,8 @@ class RapidBMBase(BoltzmannMachineBase):
         """
             When using several RapidBMBase at the same time, manually
             set up a run with this function.
+
+            Returns the needed time for which the simulation needs to be run.
 
             Do not forget to call process_run after the run is complete.
         """
@@ -871,6 +893,7 @@ class RapidBMBase(BoltzmannMachineBase):
                 "factor_eta" : self.update_factors[i, 0],
                 "factor_data" : self.update_factors[i, 1],
                 "factor_model" : self.update_factors[i, 2],
+                "update_num" : self._update_num,
             })
         return update
 
@@ -890,14 +913,39 @@ class RapidBMBase(BoltzmannMachineBase):
         return time
 
     @meta.DependsOn()
-    def time_sim_step(self, step):
+    def time_sim_step(self, value):
         """
             The length of one simulation step.
         """
-        return step
+        return value
+
+    @meta.DependsOn()
+    def time_wipe(self, value):
+        """
+            The length of one simulation step.
+        """
+        return value
+
+    @meta.DependsOn()
+    def time_imprint(self, value):
+        """
+            The length of one simulation step.
+        """
+        return value
+
+    @meta.DependsOn()
+    def time_force_spike(self, value):
+        """
+            The length of one simulation step.
+        """
+        return value
 
     @meta.DependsOn("time_current")
-    def last_spiketimes(self):
+    def last_spiketimes(self, value=None):
+        # this is only done so that a non-None value can be set during __init__
+        if value is not None:
+            return value
+
         indices, times = self._sim.nest.GetStatus(
                 self.last_spiketime_detector.all_cells.tolist(),
                 ["indices", "times"])[0]
@@ -1063,8 +1111,8 @@ class RapidBMCurrentImprint(RapidBMBase):
         if current is None:
             return 10.
 
-        if hasattr(self, "_imprint_wipe_gen_id"):
-            self._sim.nest.SetStatus(self._imprint_wipe_gen_id, {
+        if hasattr(self, "_wipe_gen_id"):
+            self._sim.nest.SetStatus(self._wipe_gen_id, {
                 "amplitude": -1 * np.abs(current) * 1000.,
                 "start" : 0.,
                 "stop" : 0.,
@@ -1089,24 +1137,24 @@ class RapidBMCurrentImprint(RapidBMBase):
 
 
     def _prepare_imprint(self):
-        log.info("Preparing current imprint") # TODO: DELME
         binary_state = self.binary_state
 
         imprint_idx = np.where((binary_state == 0)\
                 + (self.binary_state == 1))[0]
 
         wipe_start = self.time_current
-        if self.force_spike_before_run:
-            self._sim.nest.SetStatus(self._imprint_wipe_gen_id, {
+        if self._force_spike_before_run:
+            self._sim.nest.SetStatus(self._force_spike_gen_id, {
                     "start" : self.time_current,
                     "stop" : self.time_current + self.time_force_spike,
                 })
             wipe_start += self.time_force_spike
+            self._force_spike_before_run = False
 
         imprint_start = wipe_start + self.time_wipe
-        imprint_stop = imprint_start + self.time_sim_step
+        imprint_stop = imprint_start + self.time_imprint
 
-        self._sim.nest.SetStatus(self._imprint_wipe_gen_id, {
+        self._sim.nest.SetStatus(self._wipe_gen_id, {
                 "start" : wipe_start,
                 "stop" : imprint_start,
             })
@@ -1123,7 +1171,7 @@ class RapidBMCurrentImprint(RapidBMBase):
 
     def _create_imprint_circuitry(self):
         # dc generator that inhibits all samplers to imprint a new state
-        self._imprint_wipe_gen_id = self._sim.nest.Create("dc_generator")
+        self._wipe_gen_id = self._sim.nest.Create("dc_generator")
         self._force_spike_gen_id = self._sim.nest.Create("dc_generator")
 
         # dc generators that imprint the actual network state
@@ -1134,7 +1182,7 @@ class RapidBMCurrentImprint(RapidBMBase):
         self.current_wipe = self.current_wipe
         self.current_force_spike = self.current_force_spike
 
-        self._sim.nest.Connect(self._imprint_wipe_gen_id,
+        self._sim.nest.Connect(self._wipe_gen_id,
                 self.population.all_cells.tolist(), "all_to_all")
         self._sim.nest.Connect(self._force_spike_gen_id,
                 self.population.all_cells.tolist(), "all_to_all")

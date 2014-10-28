@@ -673,8 +673,13 @@ class LIFsampler(object):
         idx = np.where((samples_p_on < pre_calib.upper_bound)
                 * (samples_p_on > pre_calib.lower_bound))[0]
 
-        idx_low = max(0, idx[0]-1)
-        idx_high = min(samples_p_on.size, idx[-1]+1)
+        if len(idx) > 0:
+            idx_low = max(0, idx[0]-1)
+            idx_high = min(samples_p_on.size, idx[-1]+1)
+
+        else:
+            idx_high = np.where(samples_p_on > pre_calib.upper_bound)[0][0]
+            idx_low = idx_high - 1
 
         pre_calib.V_rest_min = samples_v_rest[idx_low]
         pre_calib.V_rest_max = samples_v_rest[idx_high]

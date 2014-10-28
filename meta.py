@@ -186,7 +186,7 @@ class DependsOn(object):
         return getattr(instance, self.value_name)
 
     def __set__(self, instance, value):
-        self._propagate_dependencies(type(instance))
+        # self._propagate_dependencies(type(instance))
         self.wipe(instance, force=True)
         log.debug("Setting {}.".format(self.attr_name))
         setattr(instance, self.value_name, self._func(instance, value))

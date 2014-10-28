@@ -79,12 +79,17 @@ class Data(object):
         return d
 
     def _from_dict(self, dikt):
-        for name, desired_type in self.data_attribute_types.iteritems():
+        for name, d in dikt.iteritems():
+            try:
+                desired_type = self.data_attribute_types[name]
+            except KeyError:
+                log.error("[{}] Unexpected attribute: {}".format(
+                    self.__class__.__name__, name))
+                continue
+
             if hasattr(self, name):
                 # class constants are skipped
                 continue
-
-            d = dikt.get(name, None)
 
             if isinstance(d, dict) and issubclass(desired_type, Data):
                 if d["_type"] != desired_type.__name__:
