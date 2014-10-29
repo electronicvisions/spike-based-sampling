@@ -80,6 +80,8 @@ class Data(object):
 
     def _from_dict(self, dikt):
         for name, d in dikt.iteritems():
+            if name == "_type":
+                continue
             try:
                 desired_type = self.data_attribute_types[name]
             except KeyError:

@@ -37,7 +37,7 @@ def train_rbm_cd(
 
     num_labels, num_samples, num_visible = training_data.shape
 
-    bm_settings = {
+    final_bm_settings = {
             "current_wipe" : 10.,
             "current_imprint" : 10.,
             "current_force_spike" : 10.,
@@ -51,9 +51,9 @@ def train_rbm_cd(
 
     bm_init_kwargs["num_units_per_layer"] = [num_visible, num_hidden]
 
-    bm_settings.update(bm_settings)
+    final_bm_settings.update(bm_settings)
 
-    recon_step = bm_settings["time_recon_step"]
+    recon_step = final_bm_settings["time_recon_step"]
 
     def init_net():
         bm = bm_type(**bm_init_kwargs)
@@ -61,7 +61,7 @@ def train_rbm_cd(
 
         bm.update_factors[:, 0] = np.sqrt(eta)
 
-        for k,v in bm_settings.iteritems():
+        for k,v in final_bm_settings.iteritems():
             setattr(bm, k, v)
 
         bm.update_weights()
