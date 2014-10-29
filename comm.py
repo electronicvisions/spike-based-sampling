@@ -170,6 +170,10 @@ class RunInSubprocess(object):
             if folder == base_module_name:
                 break
         func_dir = osp.join(*module_path_split[:i_end])
+        if not osp.isdir(func_dir):
+            log.debug("func_dir: {} is no directory, shortening…".format(
+                func_dir))
+            func_dir = osp.dirname(func_dir)
         log.debug("func_dir: {}".format(func_dir))
         return func_dir
 
