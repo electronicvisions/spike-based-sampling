@@ -206,7 +206,14 @@ class LIFsampler(object):
             In this case no pre-calibration is performed.
 
             pre_calibration_parameters can be used to alter the parameters of
-            the initial slope search.
+            the initial slope search (see sbs.db.PreCalibration).
+
+            Valid pre-calibration parameters are:
+                - lower_bound
+                - upper_bound
+                - V_rest_min
+                - V_rest_max
+                - dV
         """
         if calibration is None:
             do_pre_calibration = False
@@ -223,9 +230,9 @@ class LIFsampler(object):
             final_pre_calib = self._do_pre_calibration(calibration,
                     **pre_calibration_parameters)
 
-        # copy the final V_rest ranges
-        calibration.V_rest_min = final_pre_calib.V_rest_min
-        calibration.V_rest_max = final_pre_calib.V_rest_max
+            # copy the final V_rest ranges
+            calibration.V_rest_min = final_pre_calib.V_rest_min
+            calibration.V_rest_max = final_pre_calib.V_rest_max
 
         log.info("Taking {} samples from {:.3f}mV to {:.3f}mV…".format(
                 calibration.num_samples,
@@ -587,6 +594,41 @@ class LIFsampler(object):
                         + tau * (np.exp(-1.) - 1.)
                     )
                 )
+
+        elif self.pynn_model.startswith("IF_cond_alpha"):
+            tau_r = self.neuron_parameters.tau_refrac
+            if is_excitatory:
+                delta_E = self.neuron_parameters.e_rev_E - mean
+            else:
+                delta_E = mean - self.neuron_parameters.e_rev_I
+
+            tau_c = 1. / (1. / tau + 1. / tau_eff)
+
+            factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
+                    / np.exp(1) / tau_c * tau * tau_eff * delta_E * (
+                          tau**2 * (1- np.exp(-tau_r/tau))
+                        + tau_r * tau * np.exp(-tau_r/tau)
+                        + tau_c * (
+                              tau_eff * (np.exp(-tau_r/tau_eff)- 1 )
+                            - tau * (np.exp(-tau_r / tau) - 1) 
+                          )
+                    )
+
+        elif self.pynn_model.startswith("IF_curr_alpha"):
+            tau_r = self.neuron_parameters.tau_refrac
+            tau_m = self.neuron_parameters.tau_m
+            tau_c = 1. / (1. / tau + 1. / tau_m)
+
+            factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
+                    / np.exp(1) / tau_c * tau * tau_m * (
+                          tau**2 * (1- np.exp(-tau_r/tau))
+                        + tau_r * tau * np.exp(-tau_r/tau)
+                        + tau_c * (
+                              tau_m * (np.exp(-tau_r/tau_m)- 1 )
+                            - tau * (np.exp(-tau_r / tau) - 1) 
+                          )
+                    )
+
         return factor
 
     def _calc_distribution_theo(self):
@@ -607,9 +649,9 @@ class LIFsampler(object):
         pre_calib = db.PreCalibration(
             V_rest_min=-80., V_rest_max=-20.,
             dV=0.2,
-            lower_bound=0.05, upper_bound=0.9,
+            lower_bound=0.05, upper_bound=0.95,
             duration=1000., #  time spent when scanning for the sigmoid
-            max_search_steps=20,
+            max_search_steps=100,
         )
         for k in ["sim_name", "burn_in_time", "dt", "source_config"]:
             setattr(pre_calib, k, getattr(calibration, k))
@@ -640,7 +682,7 @@ class LIFsampler(object):
                 samples_v_rest.append(pre_calib.get_samples_v_rest())
 
             else:
-                samples_p_on.insert(0, gather_calibration_data(orig_pre_calib))
+                samples_p_on.insert(0, gather_calibration_data(pre_sampler_config))
                 samples_v_rest.insert(0, pre_calib.get_samples_v_rest())
 
             upper_bound_found = any(((spon>pre_calib.upper_bound).any()

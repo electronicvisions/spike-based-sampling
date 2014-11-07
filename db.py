@@ -4,6 +4,7 @@
 import json
 import os.path as osp
 import numpy as np
+import copy
 
 import collections as c
 
@@ -76,7 +77,7 @@ class Data(object):
         if isinstance(d, np.ndarray):
             return d.tolist()
 
-        return d
+        return copy.deepcopy(d)
 
     def _from_dict(self, dikt):
         for name, d in dikt.iteritems():

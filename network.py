@@ -46,6 +46,8 @@ class BoltzmannMachineBase(object):
         self.population = None
         self.projections = None
 
+        self.auto_sync_biases = True
+
         if sampler_config is None:
             raise ValueError("Did not specify sampler parameters.")
 
@@ -187,7 +189,7 @@ class BoltzmannMachineBase(object):
 
             for b, sampler in it.izip(biases, self.samplers):
                 sampler.bias_theo = b
-                if self.is_created:
+                if self.is_created and self.auto_sync_biases:
                     sampler.sync_bias_to_pynn()
 
     @meta.DependsOn("biases_theo")
@@ -202,7 +204,7 @@ class BoltzmannMachineBase(object):
 
             for b, sampler in it.izip(biases, self.samplers):
                 sampler.bias_bio = b
-                if self.is_created:
+                if self.is_created and self.auto_sync_biases:
                     sampler.sync_bias_to_pynn()
 
     def convert_weights_bio_to_theo(self, weights):
@@ -390,6 +392,10 @@ class ThoroughBM(BoltzmannMachineBase):
         A BoltzmannMachine focused on getting thorough representations of
         probability distributions.
     """
+
+    def __init__(self, *args, **kwargs):
+        super(ThoroughBM, self).__init__(*args, **kwargs)
+        self.selected_sampler_idx = range(self.num_samplers)
 
     ################
     # PyNN methods #
@@ -764,7 +770,7 @@ class RapidBMBase(BoltzmannMachineBase):
         super(RapidBMBase, self).__init__(*args, **kwargs)
         self._binary_state_set_externally = False
         self._sim = None
-        self.time_current = 0.0
+        self.time_current = 0.1
 
         self.time_sim_step = 30. # ms
         self.time_wipe = 50. # time between silence and imprint
@@ -819,6 +825,8 @@ class RapidBMBase(BoltzmannMachineBase):
         log.info("Connecting samplers…")
         self._create_connectivity(connectivity_matrix=connectivity_matrix)
 
+        self.update_samplers()
+
         return self.population, None
 
     def queue_update(self):
@@ -840,8 +848,8 @@ class RapidBMBase(BoltzmannMachineBase):
             Run the network for self.time_sim_step milliseconds; after that the
             binary state can be inspected.
         """
-        self.prepare_run()
-        self._sim.run_for(self.time_sim_step + self.time_wipe)
+        time_till = self.prepare_run()
+        self._sim.run_until(time_till)
         self.process_run()
         return self.time_current
 
@@ -853,13 +861,25 @@ class RapidBMBase(BoltzmannMachineBase):
             Returns the needed time for which the simulation needs to be run.
 
             Do not forget to call process_run after the run is complete.
+
+            Returns the time until which the sim has to be run.
         """
         self.update_samplers()
         # self.update_weights()
         # self.update_biases()
+        time_force_spike = None
+        if self._force_spike_before_run:
+            time_force_spike = self._prepare_force_spike()
+            self._force_spike_before_run = False
 
+        total_time = time_force_spike
         if self._binary_state_set_externally:
-            self._prepare_imprint()
+            total_time = self._prepare_imprint(time_force_spike)
+
+        if total_time is None:
+            total_time = self.time_current + self.tim_sim_step
+
+        return total_time
 
     def process_run(self):
         """
@@ -885,11 +905,11 @@ class RapidBMBase(BoltzmannMachineBase):
         update = []
         for i,s in enumerate(self.samplers):
             update.append({
-                "E_L": s.bias_bio,
+                "E_L": s.get_v_rest_from_bias(),
                 "factor_weight_conversion_exc" :
-                    s.factor_weights_theo_to_bio_exc,
+                    s.factor_weights_theo_to_bio_exc * 1000.,
                 "factor_weight_conversion_inh":
-                    s.factor_weights_theo_to_bio_inh,
+                    s.factor_weights_theo_to_bio_inh * 1000.,
                 "factor_eta" : self.update_factors[i, 0],
                 "factor_data" : self.update_factors[i, 1],
                 "factor_model" : self.update_factors[i, 2],
@@ -997,7 +1017,7 @@ class RapidBMBase(BoltzmannMachineBase):
 
         return calib_data
 
-    @meta.DependsOn("time_current")
+    @meta.DependsOn("time_current", "weights_bio")
     def weights_theo(self, value=None):
         if value is None:
             assert self.is_created
@@ -1009,7 +1029,7 @@ class RapidBMBase(BoltzmannMachineBase):
                 self._write_weights(value, kind="theo")
             return value
 
-    @meta.DependsOn("time_current")
+    @meta.DependsOn("time_current", "weights_theo")
     def weights_bio(self, value=None):
         if value is None:
             assert self.is_created
@@ -1044,8 +1064,13 @@ class RapidBMBase(BoltzmannMachineBase):
     def _create_imprint_circuitry(self):
         raise NotImplementedError
 
-    def _prepare_imprint(self):
+    def _prepare_imprint(self, wipe_start=None):
         raise NotImplementedError
+
+    def _prepare_force_spike(self, time_start=None):
+        raise NotImplementedError
+
+
 
     def _create_connectivity(self, connectivity_matrix=None):
         # TODO: Add support for TSO
@@ -1109,7 +1134,7 @@ class RapidBMCurrentImprint(RapidBMBase):
             Current with which the network state is imprinted [nA].
         """
         if current is None:
-            return 10.
+            current = 10.
 
         if hasattr(self, "_wipe_gen_id"):
             self._sim.nest.SetStatus(self._wipe_gen_id, {
@@ -1135,21 +1160,27 @@ class RapidBMCurrentImprint(RapidBMBase):
             })
         return current
 
+    def _prepare_force_spike(self, time_start=None):
+        if time_start is None:
+            time_start = self.time_current + 2*self._sim.simulator.state.dt
 
-    def _prepare_imprint(self):
+        time_stop = time_start + self.time_force_spike
+
+        self._sim.nest.SetStatus(self._force_spike_gen_id, {
+                "start" : time_start,
+                "stop" : time_stop,
+            })
+        return time_stop
+
+
+    def _prepare_imprint(self, wipe_start=None):
         binary_state = self.binary_state
 
         imprint_idx = np.where((binary_state == 0)\
                 + (self.binary_state == 1))[0]
 
-        wipe_start = self.time_current
-        if self._force_spike_before_run:
-            self._sim.nest.SetStatus(self._force_spike_gen_id, {
-                    "start" : self.time_current,
-                    "stop" : self.time_current + self.time_force_spike,
-                })
-            wipe_start += self.time_force_spike
-            self._force_spike_before_run = False
+        if wipe_start is None:
+            wipe_start = self.time_current + 2*self._sim.simulator.state.dt
 
         imprint_start = wipe_start + self.time_wipe
         imprint_stop = imprint_start + self.time_imprint
@@ -1159,8 +1190,14 @@ class RapidBMCurrentImprint(RapidBMBase):
                 "stop" : imprint_start,
             })
 
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.debug("Wipe start/stop: {:.1f}/{:.1f}".format(wipe_start,
+                imprint_start))
+            log.debug("Imprint start/stop: {:.1f}/{:.1f}".format(imprint_start,
+                imprint_stop))
+
         for state in [0, 1]:
-            imprint_idx = binary_state == state
+            imprint_idx = np.array(binary_state == state, dtype=int)
 
             self._sim.nest.SetStatus(
                 self._imprint_gen_ids[imprint_idx].tolist(), {
@@ -1168,6 +1205,8 @@ class RapidBMCurrentImprint(RapidBMBase):
                 "stop" : imprint_stop,
                 "amplitude" : self.current_imprint * 1000. * (2*state - 1),
             })
+
+        return imprint_start + self.time_sim_step
 
     def _create_imprint_circuitry(self):
         # dc generator that inhibits all samplers to imprint a new state
@@ -1383,8 +1422,12 @@ class MixinRBM(object):
 
         weights = []
         for i in xrange(self.num_layers-1):
-            weights.append(orig_weights[offset[i]:offset[i+1]].reshape(2,
-                upl[i], upl[i+1]))
+            lw = orig_weights[offset[i]:offset[i+1]].reshape(2,
+                upl[i], upl[i+1])
+            # the connections in nest are sorted the other way around
+            # lw[1, :, :] = lw[1, :, :].T.reshape(lw.shape[1:])
+            weights.append(lw)
+
         return weights
 
     def _create_connectivity(self, connectivity_matrix=None):
@@ -1417,7 +1460,18 @@ class MixinRBM(object):
                     gids[offset[i_l]:offset[i_l+1]], 'all_to_all',
                     syn_spec={"model" : self.nest_synapse_type})
 
-        self._nest_connections = nest.GetConnections(gids, gids)
+        connections = nest.GetConnections(gids, gids)
+
+        # readjust connections
+        gids_to_conn = {(conn[0], conn[1]): conn for conn in connections}
+
+        # append connections in the same order as they are in the first half
+        # TODO: Evaluate possibility of cache trashing
+        final_connections = list(connections[:len(connections)/2])
+        for fc in connections[:len(connections)/2]:
+            final_connections.append(gids_to_conn[(fc[1], fc[0])])
+
+        self._nest_connections = final_connections
 
         log.info("Setting weights to zero.")
         nest.SetStatus(self._nest_connections, "weight", 0.)
@@ -1457,18 +1511,24 @@ class MixinRBM(object):
     def _write_weights(self, weights, kind="theo"):
         # TODO Convert theoretical weights as well before writing
         assert self.is_created
-        if kind == "theo":
-            weight_theo = weights
-            weight_bio = self.convert_weights_theo_to_bio(weight_theo)
-        elif kind == "bio":
-            weight_bio = weights
-            weight_theo = self.convert_weights_bio_to_theo(weight_bio)
-        else:
-            raise ValueError("Invalid weight type supplied.")
+        # if kind == "theo":
+            # weight_theo = weights
+            # weight_bio = self.convert_weights_theo_to_bio(weight_theo)
+        # elif kind == "bio":
+            # weight_bio = weights
+            # weight_theo = self.convert_weights_bio_to_theo(weight_bio)
+        # else:
+            # raise ValueError("Invalid weight type supplied.")
 
-        data = [{"weight": w_b, "weight_theo" : w_t}
-                for lwb, lwt in it.chain(*it.izip(weight_bio, weight_theo))
-                for w_b, w_t in it.izip(lwb.reshape(-1), lwt.reshape(-1))]
+        label = {
+                "theo" : "weight_theo",
+                "bio" : "weight",
+            }[kind]
+        # data = [{"weight": w_b, "weight_theo" : w_t}
+                # for lwb, lwt in it.chain(*it.izip(weight_bio, weight_theo))
+                # for w_b, w_t in it.izip(lwb.reshape(-1), lwt.reshape(-1))]
+        data = [{label : w} for layer_w in weights for w in layer_w.reshape(-1)]
+            # it.chain(layer_w[0].reshape(-1), layer_w[1].T.reshape(-1))}]
         self._sim.nest.SetStatus(self._nest_connections, data)
 
 

@@ -144,6 +144,9 @@ def gather_calibration_data(
 
     samples_v_rest = calibration.get_samples_v_rest()
 
+    log.info("Gathering {} samples in [{}, {}] mV.".format(
+        len(samples_v_rest), samples_v_rest.min(), samples_v_rest.max()))
+
     burn_in_time = calibration.burn_in_time
     duration = calibration.duration
     total_duration = burn_in_time + duration
@@ -196,6 +199,10 @@ def gather_calibration_data(
             dtype=int)
 
     samples_p_on = num_spikes * neuron_params.tau_refrac / duration
+
+    # TODO: Put in debug logging
+    log.info("Resulting p_on: {}+-{}".format(
+        samples_p_on.mean(), samples_p_on.std()))
 
     return samples_p_on
 
