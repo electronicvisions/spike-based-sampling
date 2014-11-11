@@ -159,7 +159,7 @@ def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     var = np.dot(rates_exc, S_exc**2) * var_tau_exc\
         + np.dot(rates_inh, S_inh**2) * var_tau_inh
 
-    return v_eff, np.sqrt(var), g_tot, tau_eff
+    return v_eff, float(np.sqrt(var)), g_tot, tau_eff
 
 
 def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
@@ -205,7 +205,7 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
             * (tau_syn_I/2. + tau_eff/2.\
                 - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I))
 
-    return v_eff, np.sqrt(var), g_tot, tau_eff
+    return v_eff, float(np.sqrt(var)), g_tot, tau_eff
 
 def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
         v_rest, tau_syn_E, tau_syn_I, g_l, cm,
@@ -257,7 +257,7 @@ def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     var = np.dot(rates_exc, S_exc**2) * var_tau_exc\
         + np.dot(rates_inh, S_inh**2) * var_tau_inh
 
-    return v_eff, np.sqrt(var), g_tot, tau_eff
+    return v_eff, float(np.sqrt(var)), g_tot, tau_eff
 
 IF_cond_exp_cd_distribution = IF_cond_exp_distribution
 IF_curr_exp_cd_distribution = IF_curr_exp_distribution

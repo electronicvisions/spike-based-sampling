@@ -1034,7 +1034,7 @@ class RapidBMBase(BoltzmannMachineBase):
         if value is None:
             assert self.is_created
             return self._format_weights(np.array(self._sim.nest.GetStatus(
-                self._nest_connections, "weight")))
+                self._nest_connections, "weight"))) / 1000.
         else:
             value = self._check_weight_matrix(value)
             if self.is_created:

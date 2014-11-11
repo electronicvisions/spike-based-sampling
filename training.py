@@ -29,8 +29,13 @@ def train_rbm_pcd(
         bm_settings=None,    # dict
         sim_setup_kwargs={"spike_precision" : "on_grid", "time_step": 0.1},
         seed=42,
-        bm_type=RapidRBMCurrentImprint
+        bm_type=RapidRBMCurrentImprint,
+        steps_per_snapshot=0,
     ):
+    """
+        If steps_per_snapshot > 0, a weight update is taken from the network
+        after every `steps_per_snapshot` steps.
+    """
     assert len(training_data.shape) == 3
 
     np.random.seed(seed)
@@ -54,6 +59,14 @@ def train_rbm_pcd(
     final_bm_settings.update(bm_settings)
 
     recon_step = final_bm_settings["time_recon_step"]
+
+    if steps_per_snapshot > 0:
+        num_snapshots = num_steps / steps_per_snapshot + 1
+        if num_steps % steps_per_snapshot != 0:
+            num_snapshots += 1
+
+        snapshots_weight = np.zeros((num_snapshots, num_visible, num_hidden))
+        snapshots_bias = np.zeros((num_snapshots, num_visible + num_hidden))
 
     def init_net():
         bm = bm_type(**bm_init_kwargs)
@@ -84,6 +97,7 @@ def train_rbm_pcd(
     visible_state_model = np.random.randint(2, size=num_visible)
 
     i_l = 0 # which label
+    i_s = 0 # which snapshot
     for i_step, i_samples in enumerate(sample_ids):
 
         try:
@@ -136,9 +150,24 @@ def train_rbm_pcd(
 
         bm.queue_update()
 
+        if steps_per_snapshot > 0 and i_step % steps_per_snapshot == 0:
+            snapshots_weight[i_s] = bm.weights_theo[0][0, :, :]
+            snapshots_bias[i_s] = bm.biases_theo
+            i_s += 1
+
         i_l = (i_l+1) % num_labels
 
-    log.info(pf(bm.weights_theo))
+    # take last snapshot if needed
+    if steps_per_snapshot > 0 and i_s < num_snapshots:
+        snapshots_weight[i_s] = bm.weights_theo[0][0, :, :]
 
-    return bm.weights_theo
+
+    log.info(pf(bm.weights_theo))
+    retval = { "final_weights" : bm.weights_theo }
+
+    if steps_per_snapshot > 0:
+        retval["snapshots_weight"] = snapshots_weight
+        retval["snapshots_bias"] = snapshots_bias
+
+    return retval
 
