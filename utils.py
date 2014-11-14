@@ -63,6 +63,8 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     rates_inh /= 1000.
 
     # calculate exc, inh and total conductance
+    weights_exc = np.abs(weights_exc)
+    weights_inh = np.abs(weights_inh)
 
     g_exc = np.dot(weights_exc, rates_exc) * tau_syn_E
     g_inh = np.dot(weights_inh, rates_inh) * tau_syn_I
@@ -114,6 +116,8 @@ def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     rates_inh /= 1000.
 
     # calculate exc, inh and total conductance
+    weights_exc = np.abs(weights_exc)
+    weights_inh = np.abs(weights_inh)
 
     g_exc = np.dot(weights_exc, rates_exc) * tau_syn_E * np.exp(1.)
     g_inh = np.dot(weights_inh, rates_inh) * tau_syn_I * np.exp(1.)

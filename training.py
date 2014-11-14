@@ -96,9 +96,13 @@ def train_rbm_pcd(
     binary_state = np.ones(bm.num_samplers) + 1 # per default set nothing
     visible_state_model = np.random.randint(2, size=num_visible)
 
-    i_l = 0 # which label
+    labels = np.random.randint(num_labels, size=num_steps)
+
+    # i_l = 0 # which label
     i_s = 0 # which snapshot
     for i_step, i_samples in enumerate(sample_ids):
+
+        i_l = labels[i_step]
 
         try:
             if i_step % int(num_steps / 20) == 0:
@@ -155,7 +159,7 @@ def train_rbm_pcd(
             snapshots_bias[i_s] = bm.biases_theo
             i_s += 1
 
-        i_l = (i_l+1) % num_labels
+        # i_l = (i_l+1) % num_labels
 
     # take last snapshot if needed
     if steps_per_snapshot > 0 and i_s < num_snapshots:

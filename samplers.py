@@ -617,15 +617,15 @@ class LIFsampler(object):
         elif self.pynn_model.startswith("IF_curr_alpha"):
             tau_r = self.neuron_parameters.tau_refrac
             tau_m = self.neuron_parameters.tau_m
-            tau_c = 1. / (1. / tau + 1. / tau_m)
+            tau_c = 1. / (1. / tau - 1. / tau_m)
 
             factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
-                    / np.exp(1) / tau_c * tau * tau_m * tau_r (
+                    / np.exp(1) / tau_c * tau * tau_m * tau_r * (
                           tau**2 * (1- np.exp(-tau_r/tau))
                         + tau_r * tau * np.exp(-tau_r/tau)
                         + tau_c * (
-                              tau_m * (np.exp(-tau_r/tau_m)- 1 )
-                            - tau * (np.exp(-tau_r / tau) - 1) 
+                              tau_m * (np.exp(-tau_r/tau_m) - 1 )
+                            - tau * (np.exp(-tau_r / tau) - 1)
                           )
                     )
 
