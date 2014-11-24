@@ -207,6 +207,22 @@ class PoissonSourceConfiguration(SourceConfiguration):
         }
 
 
+class FixedSpikeTrainConfiguration(SourceConfiguration):
+    """
+        Positive weights: excitatory
+        Negative weights: inhibitory
+
+        Spike times in ms.
+    """
+    data_attribute_types = {
+            "spike_times" : np.ndarray,
+            "spike_ids" : np.ndarray,
+
+            "weights" : np.ndarray,
+        }
+
+
+
 class Fit(Data):
     data_attribute_types = {
         "alpha" : float,

@@ -877,7 +877,7 @@ class RapidBMBase(BoltzmannMachineBase):
             total_time = self._prepare_imprint(time_force_spike)
 
         if total_time is None:
-            total_time = self.time_current + self.tim_sim_step
+            total_time = self.time_current + self.time_sim_step
 
         return total_time
 

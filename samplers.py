@@ -602,12 +602,12 @@ class LIFsampler(object):
             else:
                 delta_E = mean - self.neuron_parameters.e_rev_I
 
-            tau_c = 1. / (1. / tau + 1. / tau_eff)
+            tau_c = 1. / (1. / tau - 1. / tau_eff)
 
-            factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
-                    / np.exp(1) / tau_c * tau_r / tau * tau_eff / delta_E * (
+            factor = -self.calibration.fit.alpha * self.neuron_parameters.g_l\
+                    / np.exp(1) / tau_c * tau_r * tau * tau_eff / delta_E / (
                           tau**2 * (1- np.exp(-tau_r/tau))
-                        + tau_r * tau * np.exp(-tau_r/tau)
+                        - tau_r * tau * np.exp(-tau_r/tau)
                         + tau_c * (
                               tau_eff * (np.exp(-tau_r/tau_eff)- 1 )
                             - tau * (np.exp(-tau_r / tau) - 1) 
@@ -619,10 +619,10 @@ class LIFsampler(object):
             tau_m = self.neuron_parameters.tau_m
             tau_c = 1. / (1. / tau - 1. / tau_m)
 
-            factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
-                    / np.exp(1) / tau_c * tau * tau_m * tau_r * (
+            factor = -self.calibration.fit.alpha * self.neuron_parameters.g_l\
+                    / np.exp(1) / tau_c * tau * tau_m * tau_r / (
                           tau**2 * (1- np.exp(-tau_r/tau))
-                        + tau_r * tau * np.exp(-tau_r/tau)
+                        - tau_r * tau * np.exp(-tau_r/tau)
                         + tau_c * (
                               tau_m * (np.exp(-tau_r/tau_m) - 1 )
                             - tau * (np.exp(-tau_r / tau) - 1)

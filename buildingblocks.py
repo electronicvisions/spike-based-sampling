@@ -34,6 +34,20 @@ def create_sources(sim, source_config, duration):
         num_sources = len(rates)
         log.info("Created {} sources.".format(num_sources))
 
+    elif isinstance(source_config, db.FixedSpikeTrainConfiguration):
+        # TODO: Implement me
+        weights = source_config.weights
+
+        spike_times = source_config.spike_times
+        spike_ids = source_config.spike_ids
+
+        num_sources = len(weights)
+        sources = sim.Population(num_sources, sim.SpikeSourceArray())
+
+        for i, src in enumerate(sources):
+            local_spike_times = spike_times[spike_ids == i]
+            src.spike_times = local_spike_times
+
     else:
         log.error("Source configuration of type {} unkown.".format(
             source_config.__class__.__name__))
