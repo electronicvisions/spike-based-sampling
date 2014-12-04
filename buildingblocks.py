@@ -35,18 +35,22 @@ def create_sources(sim, source_config, duration):
         log.info("Created {} sources.".format(num_sources))
 
     elif isinstance(source_config, db.FixedSpikeTrainConfiguration):
-        # TODO: Implement me
+        # TODO: test me
+        
+        log.info("Setting up fixed spike train sources.")
         weights = source_config.weights
-
         spike_times = source_config.spike_times
         spike_ids = source_config.spike_ids
+        rates = source_config.rates
 
         num_sources = len(weights)
         sources = sim.Population(num_sources, sim.SpikeSourceArray())
-
         for i, src in enumerate(sources):
             local_spike_times = spike_times[spike_ids == i]
             src.spike_times = local_spike_times
+            src.rate = rates[i]
+    
+        log.info("Created {} fixed spike train sources.".format(num_sources)) 
 
     else:
         log.error("Source configuration of type {} unkown.".format(
@@ -85,8 +89,32 @@ def connect_sources(sim, source_config, sources, target):
                 synapse_type=sim.StaticSynapse(),
                 receptor_type=rectype)
 
+    elif isinstance(source_config, db.FixedSpikeTrainConfiguration):
+	    # TODO: test me
+        projections = {}
+
+        column_names = ["weight"]
+
+        is_exc = np.array(source_config.weights > 0., dtype=int)
+
+        receptor_types = ["inhibitory", "excitatory"]
+
+        for i_r, rectype in enumerate(receptor_types):
+            conn_list = []
+            idx = is_exc == i_r
+
+            for i, weight in it.izip(np.where(idx)[0],
+                    source_config.weights[idx]):
+                for j in xrange(len(target)):
+                    conn_list.append((i, j, np.abs(weight)))
+
+            projections[rectype] = sim.Projection(sources, target,
+                sim.FromListConnector(conn_list, column_names=column_names),
+                synapse_type=sim.StaticSynapse(),
+                receptor_type=rectype)
+
     else:
-        log.error("Source configuration of type {} not unkown.".format(
+        log.error("Source configuration of type {} unkown.".format(
             source_config.__class__.__name__))
 
     return projections

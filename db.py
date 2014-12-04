@@ -215,12 +215,11 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         Spike times in ms.
     """
     data_attribute_types = {
+            "rates" : np.ndarray,
+            "weights" : np.ndarray,
             "spike_times" : np.ndarray,
             "spike_ids" : np.ndarray,
-
-            "weights" : np.ndarray,
         }
-
 
 
 class Fit(Data):
