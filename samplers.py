@@ -583,7 +583,7 @@ class LIFsampler(object):
             factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
                     / g_tot * tau_r / tau /\
                 (delta_E / (cm - g_tot * tau) *\
-                    (- cm / g_tot * (np.exp(- tau * g_tot / cm)-1.)\
+                    (- cm / g_tot * (np.exp(- tau_r * g_tot / cm)-1.)\
                         + tau * (np.exp(-tau_r / tau) - 1.)\
                     )\
                 )
@@ -592,7 +592,7 @@ class LIFsampler(object):
             tau_r = self.neuron_parameters.tau_refrac
             factor = self.calibration.fit.alpha * tau_r / tau /\
                 (1. / (cm - g_tot * tau) *\
-                    (- cm / g_tot * (np.exp(-tau*g_tot/cm) - 1.)\
+                    (- cm / g_tot * (np.exp(-tau_r*g_tot/cm) - 1.)\
                         + tau * (np.exp(-tau_r / tau) - 1.)
                     )
                 )
