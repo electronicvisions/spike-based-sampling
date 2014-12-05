@@ -30,7 +30,7 @@ class BoltzmannMachineBase(object):
     """
 
     def __init__(self, num_samplers, sim_name="pyNN.nest",
-            sampler_config=None):
+            sampler_config=None, sampler_kwargs={"silent" : False}):
         """
             Sets up a Boltzmann network.
 
@@ -38,6 +38,11 @@ class BoltzmannMachineBase(object):
                 Either one or a lilst of size `num_samplers` of
                 SamplerConfiguration objects with which the samplers are
                 initialized.
+
+            sampler_kwargs:
+                Either a dictionary of additional kwargs supplied to the
+                samplers or a list of dictionaries to supply each sampler its
+                own set of kwargs.
         """
         log.info("Creating new {}.".format(self.__class__.__name__))
         self.sim_name = sim_name
@@ -55,8 +60,11 @@ class BoltzmannMachineBase(object):
             sampler_config = [sampler_config]\
                     * self.num_samplers
 
-        self.samplers = [samplers.LIFsampler(npc)
-                for npc in sampler_config]
+        if isinstance(sampler_kwargs, dict):
+            sampler_kwargs = it.repeat(sampler_kwargs)
+
+        self.samplers = [samplers.LIFsampler(npc, **kwargs)
+                for npc, kwargs in it.izip(sampler_config, sampler_kwargs)]
 
         self.weights_theo = 0.
         # biases are set to zero automaticcaly by the samplers
@@ -628,15 +636,13 @@ class ThoroughBM(BoltzmannMachineBase):
         """
             Marginal distribution
         """
-        ssi = self.selected_sampler_idx
-        lc_biases = self.biases_theo[ssi]
-        lc_weights = self.weights_theo[ssi][:, ssi]
-
+        lc_biases = self.biases_theo
+        lc_weights = self.weights_theo
         lc_biases = np.require(lc_biases, requirements=["C"])
         lc_weights = np.require(lc_weights, requirements=["C"])
 
-        return cutils.get_bm_marginal_theo(lc_weights, lc_biases)
-        # return self.get_dist_marginal_from_joint(self.dist_joint_theo)
+        return cutils.get_bm_marginal_theo(lc_weights, lc_biases,
+                self.selected_sampler_idx)
 
     @meta.DependsOn("selected_sampler_idx", "biases_theo", "weights_theo")
     def dist_joint_theo(self):
@@ -646,16 +652,27 @@ class ThoroughBM(BoltzmannMachineBase):
         log.info("Calculating joint theoretical distribution for {} samplers."\
                 .format(len(self.selected_sampler_idx)))
 
-        ssi = self.selected_sampler_idx
-        lc_biases = self.biases_theo[ssi]
-        lc_weights = self.weights_theo[ssi][:, ssi]
+        lc_biases = self.biases_theo
+        lc_weights = self.weights_theo
 
         lc_biases = np.require(lc_biases, requirements=["C"])
         lc_weights = np.require(lc_weights, requirements=["C"])
 
         joint = cutils.get_bm_joint_theo(lc_weights, lc_biases)
 
-        return joint
+        ssi = self.selected_sampler_idx
+
+        if len(ssi) == self.num_samplers\
+                and np.all(ssi == np.arange(self.num_samplers)):
+            return joint
+
+        else:
+            for idx in xrange(self.num_samplers):
+                if idx in self.selected_sampler_idx:
+                    continue
+                joint = joint.sum(axis=idx, keepdims=True)
+
+            return joint.squeeze()
 
     ################
     # PLOT methods #
@@ -781,11 +798,7 @@ class RapidBMBase(BoltzmannMachineBase):
         self.last_spiketimes = np.zeros(self.num_samplers) - 1000.
 
         self._ensure_cd_pynn_models()
-
-        # needed for the CD based updates (set automatically when update is
-        # queued)
-        self._force_spike_before_run = False
-        self.time_force_spike = 30.
+        self._queue_update = False
 
         # shape: (num_factors, 2) first is eta, second is data, third is
         # model/recon
@@ -833,8 +846,7 @@ class RapidBMBase(BoltzmannMachineBase):
         """
             Indicate that the synapses should update in the next run.
         """
-        self._force_spike_before_run = True
-        self._update_num += 1
+        self._queue_update = True
 
     def continue_run(self, runtime):
         """
@@ -865,16 +877,9 @@ class RapidBMBase(BoltzmannMachineBase):
             Returns the time until which the sim has to be run.
         """
         self.update_samplers()
-        # self.update_weights()
-        # self.update_biases()
-        time_force_spike = None
-        if self._force_spike_before_run:
-            time_force_spike = self._prepare_force_spike()
-            self._force_spike_before_run = False
 
-        total_time = time_force_spike
         if self._binary_state_set_externally:
-            total_time = self._prepare_imprint(time_force_spike)
+            total_time = self._prepare_imprint(None)
 
         if total_time is None:
             total_time = self.time_current + self.time_sim_step
@@ -904,17 +909,21 @@ class RapidBMBase(BoltzmannMachineBase):
         """
         update = []
         for i,s in enumerate(self.samplers):
-            update.append({
+            local_update = {
                 "E_L": s.get_v_rest_from_bias(),
                 "factor_weight_conversion_exc" :
                     s.factor_weights_theo_to_bio_exc * 1000.,
                 "factor_weight_conversion_inh":
                     s.factor_weights_theo_to_bio_inh * 1000.,
-                "factor_eta" : self.update_factors[i, 0],
-                "factor_data" : self.update_factors[i, 1],
-                "factor_model" : self.update_factors[i, 2],
-                "update_num" : self._update_num,
-            })
+            }
+            if self._queue_update:
+                local_update.update({
+                    "queue_update" : True,
+                    "factor_eta" : self.update_factors[i, 0],
+                    "factor_data" : self.update_factors[i, 1],
+                    "factor_model" : self.update_factors[i, 2],
+                })
+            update.append(local_update)
         return update
 
     def update_samplers(self):
@@ -948,13 +957,6 @@ class RapidBMBase(BoltzmannMachineBase):
 
     @meta.DependsOn()
     def time_imprint(self, value):
-        """
-            The length of one simulation step.
-        """
-        return value
-
-    @meta.DependsOn()
-    def time_force_spike(self, value):
         """
             The length of one simulation step.
         """
@@ -1067,10 +1069,6 @@ class RapidBMBase(BoltzmannMachineBase):
     def _prepare_imprint(self, wipe_start=None):
         raise NotImplementedError
 
-    def _prepare_force_spike(self, time_start=None):
-        raise NotImplementedError
-
-
 
     def _create_connectivity(self, connectivity_matrix=None):
         # TODO: Add support for TSO
@@ -1144,35 +1142,6 @@ class RapidBMCurrentImprint(RapidBMBase):
             })
         return current
 
-    @meta.DependsOn()
-    def current_force_spike(self, current=None):
-        """
-            Current with which the network state is imprinted [nA].
-        """
-        if current is None:
-            return 10.
-
-        if hasattr(self, "_force_spike_gen_id"):
-            self._sim.nest.SetStatus(self._force_spike_gen_id, {
-                "amplitude": np.abs(current) * 1000.,
-                "start" : 0.,
-                "stop" : 0.,
-            })
-        return current
-
-    def _prepare_force_spike(self, time_start=None):
-        if time_start is None:
-            time_start = self.time_current + 2*self._sim.simulator.state.dt
-
-        time_stop = time_start + self.time_force_spike
-
-        self._sim.nest.SetStatus(self._force_spike_gen_id, {
-                "start" : time_start,
-                "stop" : time_stop,
-            })
-        return time_stop
-
-
     def _prepare_imprint(self, wipe_start=None):
         binary_state = self.binary_state
 
@@ -1211,7 +1180,6 @@ class RapidBMCurrentImprint(RapidBMBase):
     def _create_imprint_circuitry(self):
         # dc generator that inhibits all samplers to imprint a new state
         self._wipe_gen_id = self._sim.nest.Create("dc_generator")
-        self._force_spike_gen_id = self._sim.nest.Create("dc_generator")
 
         # dc generators that imprint the actual network state
         self._imprint_gen_ids = np.array(
@@ -1219,15 +1187,63 @@ class RapidBMCurrentImprint(RapidBMBase):
 
         # this writes the amplitude to the nest objects
         self.current_wipe = self.current_wipe
-        self.current_force_spike = self.current_force_spike
 
         self._sim.nest.Connect(self._wipe_gen_id,
-                self.population.all_cells.tolist(), "all_to_all")
-        self._sim.nest.Connect(self._force_spike_gen_id,
                 self.population.all_cells.tolist(), "all_to_all")
         self._sim.nest.Connect(self._imprint_gen_ids.tolist(),
                 self.population.all_cells.tolist(), "one_to_one")
 
+@meta.HasDependencies
+class RapidBMVmemSetting(RapidBMBase):
+    """
+        Rapid Boltzmann machine that imprints the needed network state via
+        current stimulation.
+    """
+    @meta.DependsOn()
+    def vmem_on(self, vmem=None):
+        """
+            Current with which the network state is imprinted [nA].
+        """
+        if vmem is None:
+            # if current wasn't set return the default one
+            return 0.
+
+        return vmem
+
+    @meta.DependsOn()
+    def vmem_off(self, vmem=None):
+        """
+            Current with which the network state is imprinted [nA].
+        """
+        if vmem is None:
+            return -100.
+
+        return vmem
+
+    def _prepare_imprint(self, wipe_start=None):
+        binary_state = self.binary_state
+
+        imprint_idx = np.where((binary_state == 0)\
+                + (self.binary_state == 1))[0]
+
+        if wipe_start is None:
+            wipe_start = self.time_current
+
+        Vmems = [self.vmem_off, self.vmem_on]
+
+        for state in [0, 1]:
+            imprint_idx = np.array(binary_state == state, dtype=int)
+
+            self._sim.nest.SetStatus(
+                self.population.all_cells[imprint_idx].tolist(), {
+                    "V_m" : Vmems[state],
+            })
+
+        return wipe_start
+
+    def _create_imprint_circuitry(self):
+        # nothing to create
+        pass
 
 @meta.HasDependencies
 class RapidBMSpikeImprint(RapidBMBase):
@@ -1534,6 +1550,12 @@ class MixinRBM(object):
 
 @meta.HasDependencies
 class RapidRBMCurrentImprint(MixinRBM, RapidBMCurrentImprint):
+    """
+        RBM with current imprints.
+    """
+    pass
+
+class RapidRBMVmemSetting(MixinRBM, RapidBMVmemSetting):
     """
         RBM with current imprints.
     """

@@ -117,14 +117,16 @@ def train_rbm_pcd(
         bm.binary_state = binary_state
 
         bm.run()
-        hidden_state_1 = bm.binary_state[num_visible:].copy()
+        hidden_state_data = bm.binary_state[num_visible:].copy()
         # log.info("Hidden state: " + pf(hidden_state))
         # log.info("Last spiketimes: " + pf(bm.last_spiketimes))
+        binary_state[:num_visible] = visible_state_model
 
+        bm.run()
         bm.continue_run(time_recon_step)
         visible_state_model = bm.binary_state[:num_visible].copy()
-        bm.continue_run(time_recon_step)
-        hidden_state_2 = bm.binary_state[num_visible:].copy()
+        hidden_state_model = bm.binary_state[num_visible:].copy()
+        # bm.continue_run(time_recon_step)
         # log.info("Visible state: " + pf(visible_state))
         # log.info("Last spiketimes: " + pf(bm.last_spiketimes))
 
@@ -141,12 +143,12 @@ def train_rbm_pcd(
         update_factors[:num_visible, 1] = visible_state_data
         update_factors[:num_visible, 2] = visible_state_model
 
-        update_factors[num_visible:, 1] = hidden_state_1
-        update_factors[num_visible:, 2] = hidden_state_2
+        update_factors[num_visible:, 1] = hidden_state_data
+        update_factors[num_visible:, 2] = hidden_state_model
 
         bias_update = eta_func(i_step)\
             * np.r_[visible_state_data - visible_state_model,
-                hidden_state_1 - hidden_state_2]
+                hidden_state_data - hidden_state_model]
 
         bm.biases_theo = bm.biases_theo + bias_update
 
@@ -167,7 +169,10 @@ def train_rbm_pcd(
 
 
     log.info(pf(bm.weights_theo))
-    retval = { "final_weights" : bm.weights_theo }
+    retval = {
+        "final_weights" : bm.weights_theo,
+        "final_biases" : bm.biases_theo,
+    }
 
     if steps_per_snapshot > 0:
         retval["snapshots_weight"] = snapshots_weight
@@ -203,11 +208,9 @@ def train_rbm_pcd_minibatch(
     final_bm_settings = {
             "current_wipe" : 10.,
             "current_imprint" : 10.,
-            "current_force_spike" : 10.,
 
             "time_wipe" : 20.,
             "time_imprint" : 10.,
-            "time_force_spike" : 10.,
             "time_sim_step" : 10.,
             "time_recon_step" : 10.,
         }
@@ -216,6 +219,7 @@ def train_rbm_pcd_minibatch(
 
     final_bm_settings.update(bm_settings)
 
+    time_sim_step = final_bm_settings["time_sim_step"]
     time_recon_step = final_bm_settings["time_recon_step"]
 
     if steps_per_snapshot > 0:
@@ -234,6 +238,9 @@ def train_rbm_pcd_minibatch(
 
             for s in bm.samplers:
                 s.silent = True
+
+            # log.info(bm._sim.nest.GetStatus(bm.population.all_cells.tolist(),
+                # "num_connections"))
 
             bm.auto_sync_biases = False
 
@@ -256,8 +263,8 @@ def train_rbm_pcd_minibatch(
     visible_state_data = np.zeros((len(bms), num_visible), dtype=int)
     visible_state_model = np.random.randint(2, size=(len(bms), num_visible))
 
-    hidden_state_1 = np.zeros((len(bms), num_hidden), dtype=int)
-    hidden_state_2 = np.zeros((len(bms), num_hidden), dtype=int)
+    hidden_state_data = np.zeros((len(bms), num_hidden), dtype=int)
+    hidden_state_model = np.zeros((len(bms), num_hidden), dtype=int)
 
     # i_l = 0 # which label
     i_s = 0 # which snapshot
@@ -268,36 +275,53 @@ def train_rbm_pcd_minibatch(
                 log.info("Run #{}. [SimTime: {}ms] ETA: {}".format(i_step,
                     bms[0].time_current,
                     utils.get_eta_str(t_start, i_step, num_steps)))
+                # for bm in bms:
+                    # print bm.last_spiketimes
         except ZeroDivisionError:
             pass
 
         for i_l, bm in enumerate(bms):
             visible_state_data[i_l] = training_data[i_l, i_samples[i_l]]
             binary_state = np.ones(bm.num_samplers) + 1 # per default set nothing
-            binary_state[:num_visible] = visible_state_model[i_l]
+            binary_state[:num_visible] = visible_state_data[i_l]
             bm.binary_state = binary_state
 
             # this is the same for all bms
             time_till = bm.prepare_run()
+
+        # log.info("Time till: {}".format(time_till))
 
         bms[0]._sim.run_until(time_till)
 
         for i_l, bm in enumerate(bms):
             bm.process_run()
 
-            hidden_state_1[i_l] = bm.binary_state[num_visible:].copy()
+            hidden_state_data[i_l] = bm.binary_state[num_visible:].copy()
+
+            binary_state = np.ones(bm.num_samplers) + 1 # per default set nothing
+            binary_state[:num_visible] = visible_state_model[i_l]
+            bm.binary_state = binary_state
+
+            time_till = bm.prepare_run()
             # log.info("Hidden state: " + pf(hidden_state))
             # log.info("Last spiketimes: " + pf(bm.last_spiketimes))
 
-            bm.continue_run(time_recon_step)
-            visible_state_model[i_l] = bm.binary_state[:num_visible].copy()
-
-        bms[0]._sim.run_for(time_recon_step)
+        bms[0]._sim.run_until(time_till)
+        # bm.continue_run(time_recon_step)
 
         for i_l, bm in enumerate(bms):
             bm.process_run()
+            hidden_state_model[i_l] = bm.binary_state[num_visible:].copy()
 
-            hidden_state_2[i_l] = bm.binary_state[num_visible:].copy()
+        # bms[0]._sim.run_until(time_till)
+        bm.continue_run(time_recon_step)
+
+        for i_l, bm in enumerate(bms):
+            bm.process_run()
+            visible_state_model[i_l] = bm.binary_state[:num_visible].copy()
+
+        # for i_l, bm in enumerate(bms):
+            # bm.process_run()
             # log.info("Visible state: " + pf(visible_state))
             # log.info("Last spiketimes: " + pf(bm.last_spiketimes))
 
@@ -313,18 +337,18 @@ def train_rbm_pcd_minibatch(
 
         visible_data_mean = visible_state_data.mean(axis=0) 
         visible_model_mean = visible_state_model.mean(axis=0)
-        hidden_1_mean = hidden_state_1.mean(axis=0)
-        hidden_2_mean = hidden_state_2.mean(axis=0)
+        hidden_data_mean = hidden_state_data.mean(axis=0)
+        hidden_model_mean = hidden_state_model.mean(axis=0)
 
         update_factors[:num_visible, 1] = visible_data_mean
         update_factors[:num_visible, 2] = visible_model_mean
 
-        update_factors[num_visible:, 1] = hidden_1_mean
-        update_factors[num_visible:, 2] = hidden_2_mean
+        update_factors[num_visible:, 1] = hidden_data_mean
+        update_factors[num_visible:, 2] = hidden_model_mean
 
         bias_update = eta_func(i_step)\
             * np.r_[visible_data_mean - visible_model_mean,
-                hidden_1_mean - hidden_2_mean]
+                hidden_data_mean - hidden_model_mean]
 
         for i_l, bm in enumerate(bms):
             bm.biases_theo = bm.biases_theo + bias_update
@@ -338,13 +362,24 @@ def train_rbm_pcd_minibatch(
 
         # i_l = (i_l+1) % num_labels
 
+    for bm in bms:
+        bm._sim.nest.SetStatus(bm.population.all_cells.tolist(), "V_m", 0.)
+
+    bms[0].continue_run(1.)
+    for bm in bms:
+        bm.process_run()
+
     # take last snapshot if needed
     if steps_per_snapshot > 0 and i_s < num_snapshots:
         snapshots_weight[i_s] = bm.weights_theo[0][0, :, :]
 
 
     log.info(pf(bm.weights_theo))
-    retval = { "final_weights" : bm.weights_theo }
+    log.info(pf(bm.biases_theo))
+    retval = {
+            "final_weights" : bm.weights_theo,
+            "final_biases" : bm.biases_theo,
+        }
 
     if steps_per_snapshot > 0:
         retval["snapshots_weight"] = snapshots_weight
