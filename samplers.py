@@ -573,6 +573,7 @@ class LIFsampler(object):
         cm = self.neuron_parameters.cm
 
         if self.pynn_model.startswith("IF_cond_exp"):
+            tau_r = self.neuron_parameters.tau_refrac
             if is_excitatory:
                 delta_E = self.neuron_parameters.e_rev_E - mean
             else:
@@ -580,18 +581,19 @@ class LIFsampler(object):
             # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
             # from v1 code, --obreitwi, 19-12-13 19:44:27)
             factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
-                    / g_tot /\
+                    / g_tot * tau_r / tau /\
                 (delta_E / (cm - g_tot * tau) *\
-                    (- cm / g_tot * (np.exp(- tau * g_tot / cm)-1.)\
-                        + tau * (np.exp(-1.) - 1.)\
+                    (- cm / g_tot * (np.exp(- tau_r * g_tot / cm)-1.)\
+                        + tau * (np.exp(-tau_r / tau) - 1.)\
                     )\
                 )
 
         elif self.pynn_model.startswith("IF_curr_exp"):
-            factor = self.calibration.fit.alpha /\
+            tau_r = self.neuron_parameters.tau_refrac
+            factor = self.calibration.fit.alpha * tau_r / tau /\
                 (1. / (cm - g_tot * tau) *\
-                    (- cm / g_tot * (np.exp(-tau*g_tot/cm) - 1.)\
-                        + tau * (np.exp(-1.) - 1.)
+                    (- cm / g_tot * (np.exp(-tau_r*g_tot/cm) - 1.)\
+                        + tau * (np.exp(-tau_r / tau) - 1.)
                     )
                 )
 
