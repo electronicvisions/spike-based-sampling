@@ -330,6 +330,109 @@ def get_bm_joint_sim(
     return joints.reshape([2 for i in range(num_selected)])
 
 
+@cython.boundscheck(False)
+def generate_states(
+        np.ndarray[np.int_t, ndim=1] spike_ids,
+        np.ndarray[np.float64_t, ndim=1] spike_times,
+        np.ndarray[np.float64_t, ndim=1] tau_refrac_pss, # per selected sampler
+        uint num_samplers,
+        double time_per_sample,
+        double duration,
+        ):
+    assert spike_ids.shape[0] == spike_times.shape[0]
+
+    cdef uint num_samples = <uint>(duration / time_per_sample)
+
+    cdef double current_time = 0.
+    cdef uint i_spike = 0
+    cdef uint i_sample = 0
+    cdef uint i, sampler_id
+    cdef uint i_inactivation
+    cdef double next_inactivation, next_spike, time_step
+    cdef double next_sample = time_per_sample
+    cdef uint num_spikes = spike_ids.shape[0]
+
+    cdef np.ndarray[np.float64_t, ndim=1] tau_sampler =\
+            np.zeros((num_samplers,), dtype=np.float64)
+    cdef double* tau_sampler_ptr = <double*> tau_sampler.data
+
+    cdef np.ndarray[np.int_t, ndim=2] samples = np.zeros(
+            (num_samples, num_samplers), dtype=np.int)
+
+    cdef int event_type
+    cdef int EVENT_SPIKE=0, EVENT_INACTIVATION=1, EVENT_SAMPLE=2
+
+    # since getting the joint for too many samplers is infeasable
+    # we can store 
+    cdef np.ndarray[np.int_t, ndim=1] current_state = np.zeros((num_samplers,),
+            dtype=np.int)
+
+    while current_time < duration:
+
+        # find next activation
+        next_inactivation = np.inf
+        for i in range(num_samplers):
+            if tau_sampler_ptr[i] > 0.\
+                    and tau_sampler_ptr[i] < next_inactivation:
+                next_inactivation = tau_sampler_ptr[i]
+                i_inactivation = i
+
+        if i_spike < num_spikes:
+            next_spike = spike_times[i_spike] - current_time
+        else:
+            next_spike = duration - current_time
+
+        # check out if the next event is a spike or a simple inactivation of
+        # a sampler
+
+        if next_spike < next_inactivation and next_spike < next_sample:
+            if i_spike < num_spikes:
+                event_type = EVENT_SPIKE
+            else:
+                event_type = EVENT_INACTIVATION
+            time_step = next_spike
+
+        elif next_inactivation < next_spike and next_inactivation < next_sample:
+            event_type = EVENT_INACTIVATION
+            time_step = next_inactivation
+
+        else:
+            event_type = EVENT_SAMPLE
+            time_step = next_sample
+            next_sample += time_per_sample
+
+        for i in range(num_samplers):
+            tau_sampler[i] -= time_step
+        next_sample -= time_step
+
+        if event_type == EVENT_INACTIVATION:
+            current_state[i_inactivation] = 0
+
+        if event_type == EVENT_SPIKE:
+            sampler_id = spike_ids[i_spike]
+
+            # adjust current spike
+            tau_sampler[sampler_id] = tau_refrac_pss[sampler_id]
+
+            current_state[sampler_id] = 1
+
+            # find next spike
+            i_spike += 1
+
+        if event_type == EVENT_SAMPLE:
+            samples[i_sample] = current_state
+            i_sample += 1
+            next_spike = time_step
+
+        current_time += time_step
+        # print "tau",
+        # for i in range(num_selected):
+            # print tau_sampler_ptr[i],
+        # print ""
+
+    return samples
+
+
 cdef _gibbs_sampling(
             np.ndarray[np.int_t, ndim=2] init_state,
             np.ndarray[np.int_t, ndim=2] weights,
@@ -340,6 +443,7 @@ cdef _gibbs_sampling(
             uint num_steps,
             ):
 
+    # NOT FINISHED!
     cdef uint num_chains = init_state.shape[0]
     cdef uint num_samplers = init_state.shape[1]
 
