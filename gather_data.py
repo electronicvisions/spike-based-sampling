@@ -320,6 +320,7 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
     return_data = {
             "spiketrains" : clean_spiketrains,
             "duration" : duration,
+            "dt" : dt,
         }
 
     return return_data

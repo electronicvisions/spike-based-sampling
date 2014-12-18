@@ -319,16 +319,20 @@ class BoltzmannMachineBase(object):
 
 
     def get_sample_states(self, time_per_sample=10.):
+        dt = self.spike_data.get("dt", 0.1)
+
+        steps_per_sample = int(time_per_sample / dt)
 
         return cutils.generate_states(
                 spike_ids=self.selected_sampler_spikes["id"],
-                spike_times=self.selected_sampler_spikes["t"],
+                spike_times=np.array(self.selected_sampler_spikes["t"] / dt,
+                    dtype=int),
                 tau_refrac_pss=np.array([
-                    self.samplers[i].neuron_parameters.tau_refrac
-                for i in self.selected_sampler_idx]),
+                    int(self.samplers[i].neuron_parameters.tau_refrac / dt)
+                    for i in self.selected_sampler_idx]),
                 num_samplers=len(self.selected_sampler_idx),
-                time_per_sample=time_per_sample,
-                duration=self.spike_data["duration"]
+                steps_per_sample=steps_per_sample,
+                duration=np.array(self.spike_data["duration"] / dt, dtype=int)
             )
 
 
@@ -1043,7 +1047,8 @@ class RapidBMBase(BoltzmannMachineBase):
             indices -= int(self._sampler_gids[0])
 
             old_times = times
-            times = np.zeros(self.population.size)
+            # put in large offset
+            times = np.zeros(self.population.size) - sys.float_info.max
 
             times[indices] = old_times
         return times
@@ -1063,7 +1068,8 @@ class RapidBMBase(BoltzmannMachineBase):
             enforced.
         """
         if state is None:
-            state = self.time_current - self.last_spiketimes < self.tau_refracs
+            state = self.time_current - self.last_spiketimes < \
+                    self._sim.simulator.state.dt + self.tau_refracs
             return np.array(state, dtype=int)
 
         else:
@@ -1616,9 +1622,15 @@ class MixinRBM(object):
         for i, w in enumerate(weights):
             expected_shape = (2, self.num_units_per_layer[i],
                     self.num_units_per_layer[i+1])
-            assert w.shape == expected_shape,\
-                    "Weight matrix shape {}, expected {} (layer {} <-> {})"\
-                    .format(w.shape, expected_shape, i, i+1)
+
+            if w.shape == expected_shape[1:]:
+                weights[i] = np.repeat(np.expand_dims(w, axis=0),
+                        repeats=2, axis=0)
+
+            else:
+                assert w.shape == expected_shape,\
+                        "Weight matrix shape {}, expected {} (layer {} <-> {})"\
+                        .format(w.shape, expected_shape, i, i+1)
         return weights
 
     def _write_weights(self, weights, kind="theo"):

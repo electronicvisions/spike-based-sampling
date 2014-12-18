@@ -419,6 +419,8 @@ def train_rbm_ppcd_minibatch(
     for k, v in final_bm_settings.iteritems():
         v.update(bm_settings[k])
 
+    log.info("{}".format(final_bm_settings))
+
     if steps_per_snapshot > 0:
         num_snapshots = num_steps / steps_per_snapshot + 1
         if num_steps % steps_per_snapshot != 0:
@@ -512,11 +514,21 @@ def train_rbm_ppcd_minibatch(
 
         eta_factor = eta_func(i_step) / num_labels
 
+        bias_update = np.zeros((num_visible+num_hidden,))
+
         for i_l, bm in enumerate(all_bms):
             bm["data"].process_run()
             bm["model"].process_run()
 
             visible_state_data = training_data[i_l, i_samples[i_l]]
+            visible_state_data_sim = bm["data"].binary_state[:num_visible].copy()
+
+            assert (visible_state_data == visible_state_data_sim).all(),\
+                    "Step {}/{}ms:\nExpected: {}\nRetrieved: {}\nLast spiketimes: {}".format(
+                            i_step, bm["data"].time_current,
+                            visible_state_data, visible_state_data_sim,
+                            bm["data"].last_spiketimes)
+
             hidden_state_data = bm["data"].binary_state[num_visible:].copy()
 
             visible_state_model = bm["model"].binary_state[:num_visible].copy()
@@ -531,15 +543,18 @@ def train_rbm_ppcd_minibatch(
             update_factors[num_visible:, 1] = hidden_state_data
             update_factors[num_visible:, 2] = hidden_state_model
 
-            bias_update = eta_factor\
+            bias_update += eta_factor\
                 * np.r_[visible_state_data - visible_state_model,
                     hidden_state_data - hidden_state_model]
 
             for other_bm in all_bms:
                 for v in other_bm.itervalues():
-                    v.biases_theo = v.biases_theo + bias_update
+                    # v.biases_theo = v.biases_theo + bias_update
                     v.update_factors = update_factors.copy()
                     v.queue_update()
+        for bm in all_bms:
+            for v in bm.itervalues():
+                v.biases_theo = v.biases_theo + bias_update
 
         if steps_per_snapshot > 0 and i_step % steps_per_snapshot == 0:
             snapshots_weight[i_s] = all_bms[0]["data"].weights_theo[0][0, :, :]

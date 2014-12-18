@@ -331,7 +331,7 @@ def get_bm_joint_sim(
 
 
 @cython.boundscheck(False)
-def generate_states(
+def generate_states_wrong(
         np.ndarray[np.int_t, ndim=1] spike_ids,
         np.ndarray[np.float64_t, ndim=1] spike_times,
         np.ndarray[np.float64_t, ndim=1] tau_refrac_pss, # per selected sampler
@@ -375,7 +375,6 @@ def generate_states(
             if tau_sampler_ptr[i] > 0.\
                     and tau_sampler_ptr[i] < next_inactivation:
                 next_inactivation = tau_sampler_ptr[i]
-                i_inactivation = i
 
         if i_spike < num_spikes:
             next_spike = spike_times[i_spike] - current_time
@@ -403,10 +402,10 @@ def generate_states(
 
         for i in range(num_samplers):
             tau_sampler[i] -= time_step
-        next_sample -= time_step
+            if tau_sampler[i] <= 0:
+                current_state[i] = 0
 
-        if event_type == EVENT_INACTIVATION:
-            current_state[i_inactivation] = 0
+        next_sample -= time_step
 
         if event_type == EVENT_SPIKE:
             sampler_id = spike_ids[i_spike]
@@ -429,6 +428,57 @@ def generate_states(
         # for i in range(num_selected):
             # print tau_sampler_ptr[i],
         # print ""
+
+    return samples
+
+@cython.boundscheck(False)
+def generate_states(
+        np.ndarray[np.int_t, ndim=1] spike_ids,
+        np.ndarray[np.int_t, ndim=1] spike_times,
+        np.ndarray[np.int_t, ndim=1] tau_refrac_pss, # per selected sampler
+        uint num_samplers,
+        uint steps_per_sample,
+        uint duration,
+        ):
+    assert spike_ids.shape[0] == spike_times.shape[0]
+
+    cdef uint num_samples = <uint>(duration / steps_per_sample)
+
+    cdef uint current_step = 0
+    cdef uint i_spike = 0
+    cdef uint i_sample = 0
+    cdef uint i
+    cdef uint num_spikes = spike_ids.shape[0]
+
+    cdef np.ndarray[np.int_t, ndim=1] last_spiketimes =\
+            np.zeros((num_samplers,), dtype=np.int) - 2147483647
+
+    cdef np.ndarray[np.int_t, ndim=2] samples = np.zeros(
+            (num_samples, num_samplers), dtype=np.int)
+
+    cdef np.ndarray[np.int_t, ndim=1] current_state = np.zeros((num_samplers,),
+            dtype=np.int)
+
+    while current_step < duration:
+
+        # print "Setting last spiketimes"
+
+        while i_spike < num_spikes and spike_times[i_spike] <= current_step:
+            last_spiketimes[spike_ids[i_spike]] = spike_times[i_spike]
+            i_spike += 1
+
+        # print "Getting state"
+
+        for i in range(num_samplers):
+            current_state[i] = current_step - last_spiketimes[i]\
+                    < tau_refrac_pss[i]
+
+        # print "Setting samples"
+
+        samples[i_sample] = current_state
+
+        current_step += steps_per_sample
+        i_sample += 1
 
     return samples
 
