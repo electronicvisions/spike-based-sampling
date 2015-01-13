@@ -362,8 +362,11 @@ class BoltzmannMachineBase(object):
         return utils.get_ordered_spike_idx(self.spike_data["spiketrains"])
 
     @meta.DependsOn()
-    def selected_sampler_idx(self, selected_sampler_idx):
-        return np.array(list(set(selected_sampler_idx)), dtype=np.int)
+    def selected_sampler_idx(self, selected_sampler_idx=None):
+        if selected_sampler_idx is None:
+            return np.arange(self.num_samplers, dtype=np.int) 
+        else:
+            return np.array(list(set(selected_sampler_idx)), dtype=np.int)
 
     ################
     # PYNN methods #
@@ -960,7 +963,7 @@ class RapidBMBase(BoltzmannMachineBase):
         """
         self.time_current = self._sim.simulator.state.t
 
-    def update_weights(self):
+    def update_weights_bio(self):
         weights = self.weights_bio.copy() * 1000. # convert to nest manually
 
         weights = weights[self.connectivity_matrix]
@@ -1097,8 +1100,8 @@ class RapidBMBase(BoltzmannMachineBase):
                 self._nest_connections, "weight_theo")))
         else:
             value = self._check_weight_matrix(value)
-            if self.is_created:
-                self._write_weights(value, kind="theo")
+            # if self.is_created:
+                # self._write_weights(value, kind="theo")
             return value
 
     @meta.DependsOn("time_current", "weights_theo")
@@ -1109,8 +1112,8 @@ class RapidBMBase(BoltzmannMachineBase):
                 self._nest_connections, "weight"))) / 1000.
         else:
             value = self._check_weight_matrix(value)
-            if self.is_created:
-                self._write_weights(value, kind="bio")
+            # if self.is_created:
+                # self._write_weights(value, kind="bio")
             return value
 
 
@@ -1486,7 +1489,7 @@ class MixinRBM(object):
 
             # conversion of first layer to second
             for j, sampler in enumerate(
-                    self.samplers[id_offset[i_l+1]:id_offset[i_l+2]]):
+                    self.samplers[id_offset[i_l+2]:id_offset[i_l+2]]):
                 l_weights[0, :, j] = sampler.convert_weights_theo_to_bio(
                         l_theo_weights[0, :, j])
 
@@ -1503,15 +1506,15 @@ class MixinRBM(object):
             "Setting biological weights directly is currently not supported.")
         return None
 
-    def update_weights(self):
+    def update_weights_bio(self):
         # # on the first run it computes the weights twice, but that is okay
         # weights = self.convert_weights_theo_to_bio(self.weights_theo,
                 # out=self.weights_bio)
         # weights = [w * 1000. for layer_w in self.weights_bio
                 # for w in layer_w.reshape(-1)]
         log.info("Converting and loading weights…")
-        params = [{"weight": w} for w in it.chain(*(w.reshape(-1)
-            for w in self.weights_bio))]
+        params = [{"weight": w * 1000.} for l_weights in self.weights_bio for w in
+                it.chain(l_weights[0].reshape(-1), l_weights[1].T.reshape(-1))]
 
         # for conn, weight in it.izip(self._nest_connections, weights):
             # self._sim.nest.SetStatus([conn], {"weight" : weight})
@@ -1534,15 +1537,26 @@ class MixinRBM(object):
 
     def _format_weights(self, weights):
         orig_weights = weights
-        upl = self.num_units_per_layer
+        # upl = self.num_units_per_layer
         nupl = np.array(self.num_units_per_layer)
         offset = nupl[1:] * nupl[:-1] * 2
         offset = np.r_[0, np.cumsum(offset)]
 
         weights = []
         for i in xrange(self.num_layers-1):
-            lw = orig_weights[offset[i]:offset[i+1]].reshape(2,
-                upl[i], upl[i+1])
+            lw = np.zeros((2, nupl[i], nupl[i+1]))
+
+            num_units = nupl[i] * nupl[i+1]
+
+            lw[0] = orig_weights[
+                    offset[i]:offset[i]+num_units].reshape(nupl[i], nupl[i+1])
+
+            lw[1] = orig_weights[
+                    offset[i]+num_units:offset[i]+2*num_units
+                ].reshape(nupl[i+1], nupl[i]).T
+
+            # lw = orig_weights[offset[i]:offset[i+1]].reshape(2,
+                # upl[i], upl[i+1])
             # the connections in nest are sorted the other way around
             # lw[1, :, :] = lw[1, :, :].T.reshape(lw.shape[1:])
             weights.append(lw)
@@ -1581,23 +1595,26 @@ class MixinRBM(object):
 
         connections = nest.GetConnections(gids, gids)
 
-        # readjust connections
-        gids_to_conn = {(conn[0], conn[1]): conn for conn in connections}
+        # # readjust connections
+        # gids_to_conn = {(conn[0], conn[1]): conn for conn in connections}
 
-        # append connections in the same order as they are in the first half
-        # TODO: Evaluate possibility of cache trashing
-        final_connections = list(connections[:len(connections)/2])
-        for fc in connections[:len(connections)/2]:
-            final_connections.append(gids_to_conn[(fc[1], fc[0])])
+        # # append connections in the same order as they are in the first half
+        # # TODO: Evaluate possibility of cache trashing
+        # final_connections = list(connections[:len(connections)/2])
+        # for fc in connections[:len(connections)/2]:
+            # final_connections.append(gids_to_conn[(fc[1], fc[0])])
 
-        self._nest_connections = final_connections
+        # self._nest_connections = final_connections
 
-        log.info("Setting weights to zero.")
-        nest.SetStatus(self._nest_connections, "weight", 0.)
+        self._nest_connections = connections
+
+        # log.info("Setting weights to zero.")
+        # nest.SetStatus(self._nest_connections, "weight", 0.)
 
         log.info("Setting delays.")
         nest.SetStatus(self._nest_connections, "delay",
-                [d for l_delay in self.delays for d in l_delay.reshape(-1)])
+            [d for l_delay in self.delays for d in
+                it.chain(l_delay[0].reshape(-1), l_delay[1].T.reshape(-1))])
 
         log.info("Done connecting.")
 
@@ -1644,7 +1661,6 @@ class MixinRBM(object):
             # weight_theo = self.convert_weights_bio_to_theo(weight_bio)
         # else:
             # raise ValueError("Invalid weight type supplied.")
-
         label = {
                 "theo" : "weight_theo",
                 "bio" : "weight",
@@ -1652,7 +1668,8 @@ class MixinRBM(object):
         # data = [{"weight": w_b, "weight_theo" : w_t}
                 # for lwb, lwt in it.chain(*it.izip(weight_bio, weight_theo))
                 # for w_b, w_t in it.izip(lwb.reshape(-1), lwt.reshape(-1))]
-        data = [{label : w} for layer_w in weights for w in layer_w.reshape(-1)]
+        data = [{label : w} for layer_w in weights
+            for w in it.chain(layer_w[0].reshape(-1), layer_w[1].T.reshape(-1))]
             # it.chain(layer_w[0].reshape(-1), layer_w[1].T.reshape(-1))}]
         self._sim.nest.SetStatus(self._nest_connections, data)
 
@@ -1683,7 +1700,7 @@ class ThoroughRBM(MixinRBM, BoltzmannMachineBase):
         super(ThoroughRBM, self).create_connectivity(**kwargs)
 
         # write weights after creation because we are only writing weights once
-        self._write_weights(self.weights_bio, kind="bio")
+        self.update_weights_bio()
 
 
 

@@ -427,7 +427,6 @@ def get_ordered_spike_idx(spiketrains):
 def check_list_array(obj):
     return isinstance(obj, c.Sequence) or isinstance(obj, np.ndarray)
 
-
 def dkl(p, q):
     """
         Kullback-Leibler divergence
@@ -436,7 +435,6 @@ def dkl(p, q):
     p = p[idx]
     q = q[idx]
     return np.sum(p * np.log(p/q))
-
 
 def dkl_sum_marginals(ps, qs):
     """
