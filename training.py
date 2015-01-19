@@ -13,6 +13,7 @@ from pprint import pformat as pf
 
 from . import utils
 from .logcfg import log
+from . import network
 from .network import RapidRBMImprintCurrent
 
 # RapidRBMImprintCurrent = m.ClassInSubprocess(RapidRBMImprintCurrent)
@@ -155,13 +156,12 @@ def train_rbm_cd(
             # bm.update_weights()
 
         update_factors = bm.update_factors
-        update_factors[:, 0] = np.sqrt(eta_func(i_step))
 
-        update_factors[:num_visible, 1] = visible_state_data
-        update_factors[:num_visible, 2] = visible_state_model
+        update_factors[:num_visible, 0] = visible_state_data
+        update_factors[:num_visible, 1] = visible_state_model
 
-        update_factors[num_visible:, 1] = hidden_state_data
-        update_factors[num_visible:, 2] = hidden_state_model
+        update_factors[num_visible:, 0] = hidden_state_data
+        update_factors[num_visible:, 1] = hidden_state_model
 
         bias_update = eta_func(i_step)\
             * np.r_[visible_state_data - visible_state_model,
@@ -170,6 +170,7 @@ def train_rbm_cd(
         bm.biases_theo = bm.biases_theo + bias_update
 
         bm.update_factors = update_factors
+        bm.eta = eta_func(i_step)
 
         bm.queue_update()
 
@@ -269,10 +270,15 @@ def train_rbm_ppcd(
         s.silent = True
 
     bm["data"].create_no_return(sim_setup_kwargs=sim_setup_kwargs)
+
+    # only use one shared memory object (TODO: find better abstraction)
+    bm["model"].use_same_shared_update_data_as(bm["data"])
     bm["model"].create_no_return()
 
     bm["data"].auto_sync_biases = False
     bm["model"].auto_sync_biases = False
+
+    network.setup_rapid_bms_for_updates([bm[t] for t in "data model".split()])
 
     for k,v in final_bm_settings.iteritems():
         for ki, vi in v.iteritems():
@@ -296,6 +302,8 @@ def train_rbm_ppcd(
 
     labels = np.random.randint(num_labels, size=num_steps)
 
+    first_eta = True
+
     # i_l = 0 # which label
     i_s = 0 # which snapshot
     for i_step, i_samples in enumerate(sample_ids):
@@ -303,10 +311,11 @@ def train_rbm_ppcd(
         i_l = labels[i_step]
 
         try:
-            if i_step % int(num_steps / 20) == 0:
+            if i_step % int(num_steps / 20) == 0 or first_eta:
                 log.info("Run #{}. [SimTime: {}ms] ETA: {}".format(i_step,
                     bm["data"].time_current,
                     utils.get_eta_str(t_start, i_step, num_steps)))
+                first_eta = False
         except ZeroDivisionError:
             pass
 
@@ -316,6 +325,9 @@ def train_rbm_ppcd(
         # binary_state[:num_visible] = visible_state_model
         bm["data"].binary_state = binary_state
 
+        # not needed since no state is set
+        # bm["model"].prepare_run()
+
         bm["data"].run()
         bm["model"].process_run()
         hidden_state_data = bm["data"].binary_state[num_visible:].copy()
@@ -324,22 +336,25 @@ def train_rbm_ppcd(
         hidden_state_model = bm["model"].binary_state[num_visible:].copy()
 
         update_factors = bm["data"].update_factors
-        update_factors[:, 0] = np.sqrt(eta_func(i_step))
 
-        update_factors[:num_visible, 1] = visible_state_data
-        update_factors[:num_visible, 2] = visible_state_model
+        update_factors[:num_visible, 0] = visible_state_data
+        update_factors[:num_visible, 1] = visible_state_model
 
-        update_factors[num_visible:, 1] = hidden_state_data
-        update_factors[num_visible:, 2] = hidden_state_model
+        update_factors[num_visible:, 0] = hidden_state_data
+        update_factors[num_visible:, 1] = hidden_state_model
 
         bias_update = eta_func(i_step)\
             * np.r_[visible_state_data - visible_state_model,
                 hidden_state_data - hidden_state_model]
 
+        eta = eta_func(i_step)
         for v in bm.itervalues():
             v.biases_theo = v.biases_theo + bias_update
-            v.update_factors = update_factors
-            v.queue_update()
+
+        # only need to queue data once because it is shared
+        bm["data"].update_factors = update_factors
+        bm["data"].eta = eta
+        bm["data"].queue_update()
 
         if steps_per_snapshot > 0 and i_step % steps_per_snapshot == 0:
             snapshots_weight[i_s] = bm["data"].weights_theo[0][0, :, :]
@@ -355,9 +370,9 @@ def train_rbm_ppcd(
     bm["data"].binary_state = np.ones(bm["data"].num_samplers, dtype=int)
     bm["data"].run()
 
-    log.info(
-        bm["data"]._sim.nest.GetStatus(bm["data"].population.all_cells.tolist(),
-        "updates_queued"))
+    # log.info(
+        # bm["data"]._sim.nest.GetStatus(bm["data"].population.all_cells.tolist(),
+        # "updates_queued"))
 
     log.info(pf(bm["data"].weights_theo))
     # TODO: Error when querying bio weights
@@ -444,11 +459,19 @@ def train_rbm_ppcd_minibatch(
         for s in it.chain(bm["data"].samplers, bm["model"].samplers):
             s.silent = True
 
-        bm["data"].create_no_return()
-        bm["model"].create_no_return()
-
         bm["data"].auto_sync_biases = False
         bm["model"].auto_sync_biases = False
+
+        if not all_bms[0]["data"].is_created:
+            bm["data"].create_no_return()
+
+            bm["model"].use_same_shared_update_data_as(bm["data"])
+            bm["model"].create_no_return()
+
+        else:
+            for k in ["data", "model"]:
+                bm[k].use_same_shared_update_data_as(all_bms[0]["data"])
+                bm[k].create_no_return()
 
         for k,v in final_bm_settings.iteritems():
             for ki, vi in v.iteritems():
@@ -462,13 +485,16 @@ def train_rbm_ppcd_minibatch(
             for v in bm.itervalues():
                 v.weights_theo = init_weights_theo
 
+    network.setup_rapid_bms_for_updates(
+            [bm for bmset in all_bms for bm in bmset.itervalues()])
+
     sample_ids = np.random.randint(num_samples, size=(num_steps, num_labels))
 
     t_start = time.time()
 
-    # set a random binary state in the beginning
-    binary_state = np.ones(bm["data"].num_samplers) + 1 # per default set nothing
-    visible_state_model = np.random.randint(2, size=num_visible)
+    # # set a random binary state in the beginning
+    # binary_state = np.ones(all_bms[0]["data"].num_samplers) + 1 # per default set nothing
+    # visible_state_model = np.random.randint(2, size=num_visible)
 
     # labels = np.random.randint(num_labels, size=num_steps)
 
@@ -481,13 +507,13 @@ def train_rbm_ppcd_minibatch(
         try:
             if i_step % int(num_steps / 20) == 0:
                 log.info("Run #{}. [SimTime: {}ms] ETA: {}".format(i_step,
-                    bm["data"].time_current,
+                    all_bms[0]["data"].time_current,
                     utils.get_eta_str(t_start, i_step, num_steps)))
 
-                for i_l, bm in enumerate(all_bms):
-                    for k,v in bm.iteritems():
-                        v._sim.nest.SetStatus(v._nest_connections,
-                                "manual_weight_update", True)
+                # for i_l, bm in enumerate(all_bms):
+                    # for k,v in bm.iteritems():
+                        # v._sim.nest.SetStatus(v._nest_connections,
+                                # "manual_weight_update", True)
 
                         # updates_queued = v._sim.nest.GetStatus(
                                 # v.population.all_cells.tolist(),
@@ -535,23 +561,21 @@ def train_rbm_ppcd_minibatch(
             hidden_state_model = bm["model"].binary_state[num_visible:].copy()
 
             update_factors = bm["data"].update_factors.copy()
-            update_factors[:, 0] = eta_factor
 
-            update_factors[:num_visible, 1] = visible_state_data
-            update_factors[:num_visible, 2] = visible_state_model
+            update_factors[:num_visible, 0] = visible_state_data
+            update_factors[:num_visible, 1] = visible_state_model
 
-            update_factors[num_visible:, 1] = hidden_state_data
-            update_factors[num_visible:, 2] = hidden_state_model
+            update_factors[num_visible:, 0] = hidden_state_data
+            update_factors[num_visible:, 1] = hidden_state_model
 
             bias_update += eta_factor\
                 * np.r_[visible_state_data - visible_state_model,
                     hidden_state_data - hidden_state_model]
 
-            for other_bm in all_bms:
-                for v in other_bm.itervalues():
-                    # v.biases_theo = v.biases_theo + bias_update
-                    v.update_factors = update_factors.copy()
-                    v.queue_update()
+            all_bms[0]["data"].eta = eta_factor
+            all_bms[0]["data"].update_factors = update_factors.copy()
+            all_bms[0]["data"].queue_update() # will propagate
+
         for bm in all_bms:
             for v in bm.itervalues():
                 v.biases_theo = v.biases_theo + bias_update
@@ -720,13 +744,12 @@ def train_rbm_pcd(
             # bm.update_weights()
 
         update_factors = bm.update_factors
-        update_factors[:, 0] = np.sqrt(eta_func(i_step))
+        bm.eta = eta_func(i_step)
+        update_factors[:num_visible, 0] = visible_state_data
+        update_factors[:num_visible, 1] = visible_state_model
 
-        update_factors[:num_visible, 1] = visible_state_data
-        update_factors[:num_visible, 2] = visible_state_model
-
-        update_factors[num_visible:, 1] = hidden_state_data
-        update_factors[num_visible:, 2] = hidden_state_model
+        update_factors[num_visible:, 0] = hidden_state_data
+        update_factors[num_visible:, 1] = hidden_state_model
 
         bias_update = eta_func(i_step)\
             * np.r_[visible_state_data - visible_state_model,
@@ -919,24 +942,25 @@ def train_rbm_pcd_minibatch(
             # # bm.update_weights()
 
         update_factors = bms[0].update_factors
-        update_factors[:, 0] = np.sqrt(eta_func(i_step))
 
         visible_data_mean = visible_state_data.mean(axis=0) 
         visible_model_mean = visible_state_model.mean(axis=0)
         hidden_data_mean = hidden_state_data.mean(axis=0)
         hidden_model_mean = hidden_state_model.mean(axis=0)
 
-        update_factors[:num_visible, 1] = visible_data_mean
-        update_factors[:num_visible, 2] = visible_model_mean
+        update_factors[:num_visible, 0] = visible_data_mean
+        update_factors[:num_visible, 1] = visible_model_mean
 
-        update_factors[num_visible:, 1] = hidden_data_mean
-        update_factors[num_visible:, 2] = hidden_model_mean
+        update_factors[num_visible:, 0] = hidden_data_mean
+        update_factors[num_visible:, 1] = hidden_model_mean
 
         bias_update = eta_func(i_step)\
             * np.r_[visible_data_mean - visible_model_mean,
                 hidden_data_mean - hidden_model_mean]
 
+        eta = eta_func(i_step)
         for i_l, bm in enumerate(bms):
+            bm.eta = eta
             bm.biases_theo = bm.biases_theo + bias_update
             bm.update_factors = update_factors
             bm.queue_update()

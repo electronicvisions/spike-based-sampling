@@ -7,6 +7,7 @@ from .logcfg import log
 
 
 
+# hopefully not needed anymore
 def patch_pynn():
     from pyNN.nest.standardmodels import cells
     import pyNN.nest

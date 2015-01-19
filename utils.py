@@ -27,8 +27,8 @@ __all__ = [
     "IF_cond_exp_distribution",
     "IF_cond_alpha_distribution",
     "IF_curr_exp_distribution",
-    "IF_cond_exp_cd_distribution",
-    "IF_curr_exp_cd_distribution",
+    # "IF_cond_exp_cd_distribution",
+    # "IF_curr_exp_cd_distribution",
     "check_list_array",
     "erfm",
     "fill_diagonal",
@@ -263,11 +263,11 @@ def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
 
     return v_eff, float(np.sqrt(var)), g_tot, tau_eff
 
-IF_cond_exp_cd_distribution = IF_cond_exp_distribution
-IF_curr_exp_cd_distribution = IF_curr_exp_distribution
+# IF_cond_exp_cd_distribution = IF_cond_exp_distribution
+# IF_curr_exp_cd_distribution = IF_curr_exp_distribution
 
-IF_cond_alpha_cd_distribution = IF_cond_alpha_distribution
-IF_curr_alpha_cd_distribution = IF_curr_alpha_distribution
+# IF_cond_alpha_cd_distribution = IF_cond_alpha_distribution
+# IF_curr_alpha_cd_distribution = IF_curr_alpha_distribution
 
 
 def sigmoid(x):
@@ -306,8 +306,8 @@ def fill_diagonal(array, value=0):
 def get_urandom_num(n=1, BYTE_LEN=8):
     rand_bytes = os.urandom(BYTE_LEN*n)
 
-    return [struct.unpack("L", rand_bytes[i*BYTE_LEN:(i+1)*BYTE_LEN])[0]
-            for i in xrange(n)]
+    return (struct.unpack("L", rand_bytes[i*BYTE_LEN:(i+1)*BYTE_LEN])[0]
+            for i in xrange(n))
 
 
 def get_random_string(n=32, letters=string.ascii_letters):

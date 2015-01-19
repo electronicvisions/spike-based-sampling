@@ -12,6 +12,7 @@ from pprint import pformat as pf
 import pylab as p
 
 from .logcfg import log
+from . import io
 from . import db
 from . import samplers
 from . import utils
@@ -44,10 +45,11 @@ class BoltzmannMachineBase(object):
                 samplers or a list of dictionaries to supply each sampler its
                 own set of kwargs.
         """
-        log.info("Creating new {}.".format(self.__class__.__name__))
+        log.info("Creating new {} with {} samplers.".format(
+            self.__class__.__name__, num_samplers))
         self.sim_name = sim_name
-        self.num_samplers = num_samplers
 
+        self.num_samplers = num_samplers
         self.population = None
         self.projections = None
 
@@ -850,18 +852,28 @@ class RapidBMBase(BoltzmannMachineBase):
         self._binary_state_set_externally = False
         self._sim = None
         self.time_current = 0.1
+        self.eta = 1e-4
+
+        # if set this nest synapse type will be used
+        self.fixed_nest_synapse_name = None
+
+        # how many updates do we queue maximally
+        self.num_max_queued_updates = 100
 
         self.time_sim_step = 30. # ms
         self.time_wipe = 50. # time between silence and imprint
         self.time_imprint = 30. # how long are the 
         self._update_num = 0
+        self._update_info = {
+                "to_notify" : set(),
+            }
 
         # has to be non-None for the propagation to binary state to work
         self.last_spiketimes = np.zeros(self.num_samplers) - 1000.
 
         # shape: (num_factors, 2) first is eta, second is data, third is
         # model/recon
-        self.update_factors = np.zeros((self.num_samplers, 3))
+        self.update_factors = np.zeros((self.num_samplers, 2))
 
     def create_population(self, **kwargs):
         """
@@ -877,18 +889,22 @@ class RapidBMBase(BoltzmannMachineBase):
         self._sim = sim
         assert hasattr(self._sim, "nest"), "Only works with NEST."
 
-        self._ensure_cd_pynn_models()
+        # self._ensure_cd_pynn_models()
 
         kwargs["duration"] = self._sim.nest.GetKernelStatus()["T_max"]
 
         population = super(RapidBMBase, self).create_population(**kwargs)
         self._sampler_gids = population.all_cells.tolist()
 
-        self.last_spiketime_detector = self._sim.Population(1,
-                self._sim.native_cell_type("last_spike_detector")())
+        # self.last_spiketime_detector = self._sim.Population(1,
+                # self._sim.native_cell_type("last_spike_detector")())
+        self._last_spiketime_detector_id = self._sim.nest.Create(
+                "last_spike_detector")
 
-        self._proj_pop_lsd = self._sim.Projection(population,
-                self.last_spiketime_detector, self._sim.AllToAllConnector())
+        # self._proj_pop_lsd = self._sim.Projection(population,
+                # self.last_spiketime_detector, self._sim.AllToAllConnector())
+        self._sim.nest.Connect(population.all_cells.tolist(),
+                self._last_spiketime_detector_id, "all_to_all")
 
         self.population = population
 
@@ -899,21 +915,69 @@ class RapidBMBase(BoltzmannMachineBase):
 
         return population
 
+    def create_connectivity(self, **kwargs):
+        # TODO: Add support for TSO
+        if self.saturating_synapses_enabled:
+            log.warn(self.__class__.__name__ + " currently does not support "\
+                    "saturating synapses.")
+
+        global_delay = len(self.delays.shape) == 0
+
+        nest = self._sim.nest
+
+        connectivity_matrix = self.weights_bio != 0.
+
+        self.connectivity_matrix = connectivity_matrix
+
+        gids = self._sampler_gids
+
+        self._copy_synapse_type()
+
+        for src, tgt in it.izip(*np.where(connectivity_matrix)):
+            nest.Connect(gids[src], gids[tgt], syn_spec={
+                "weight" : 0.,
+                "delay"  : self.delays[src, tgt] if not global_delay
+                            else self.delays,
+                "model" : self.local_nest_synapse_type})
+
+        self._nest_connections = nest.GetConnections(gids, gids)
+        self.create_update_machinery()
+
+    def use_same_shared_update_data_as(self, other_bm):
+        self._update_info["synapse_type_to_copy"] =\
+                other_bm.local_nest_synapse_type
+
+        other_bm._update_info["to_notify"].add(self)
+
     def queue_update(self):
         """
             Indicate that the synapses should update in the next run.
         """
-        update = []
-        for i,s in enumerate(self.samplers):
-            local_update = {
-                "queue_update" : True,
-                "factor_eta" : self.update_factors[i, 0],
-                "factor_data" : self.update_factors[i, 1],
-                "factor_model" : self.update_factors[i, 2],
-            }
-            update.append(local_update)
-        self._sim.nest.SetStatus(self.population.all_cells.tolist(), update)
-        # self._sim.run_for(self._sim.simulator.state.dt)
+        if self.update_params.get_snapshots_used()\
+                >= self.num_max_queued_updates:
+            self.update_params.clear_updates()
+
+        self.update_params.prepare_next_update()
+        self.update_params.set_eta(self.eta)
+        self.update_params.set_update_data(self.update_factors)
+        self.update_params.set_weight_conversion_factors([
+            [s.factor_weights_theo_to_bio_exc, s.factor_weights_theo_to_bio_inh]
+                for s in self.samplers])
+        self.update_params.flush_files()
+
+        if self.update_params.get_snapshots_used()\
+                == self.num_max_queued_updates:
+            to_notify = [self]
+            try:
+                while True:
+                    bm = to_notify.pop()
+                    bm.manual_update()
+                    for b in bm._update_info["to_notify"]:
+                        to_notify.append(b)
+
+            except IndexError:
+                pass
+
 
     def continue_run(self, runtime):
         """
@@ -990,8 +1054,10 @@ class RapidBMBase(BoltzmannMachineBase):
         return update
 
     def update_samplers(self):
-        update = self.get_sampler_update()
-        self._sim.nest.SetStatus(self.population.all_cells.tolist(), update)
+        # not needed anymore
+        pass
+        # update = self.get_sampler_update()
+        # self._sim.nest.SetStatus(self.population.all_cells.tolist(), update)
 
     def manual_update(self):
         """
@@ -1040,7 +1106,7 @@ class RapidBMBase(BoltzmannMachineBase):
             return value
 
         indices, times = self._sim.nest.GetStatus(
-                self.last_spiketime_detector.all_cells.tolist(),
+                self._last_spiketime_detector_id,
                 ["indices", "times"])[0]
 
         if times.size != self.population.size:
@@ -1136,6 +1202,35 @@ class RapidBMBase(BoltzmannMachineBase):
         data = [{label: w} for w in weights.reshape(-1)]
         self._sim.nest.SetStatus(self._nest_connections, data)
 
+    def _create_update_circuitry(self):
+        """
+            Call after synapses have been created!
+        """
+        log.info("Setting up update machinery.")
+
+        # check if the filepath has already been set (by another
+        # boltzmann-machine with the same fixed synapse name)
+        filepath = self._sim.nest.GetDefaults(self.local_nest_synapse_type,
+                "filepath")
+
+        if len(filepath) == 0:
+            self.update_params = io.UpdateParamsCD(
+                num_nodes=self.num_samplers,
+                num_snapshots=self.num_max_queued_updates)
+        else:
+            self.update_params = io.UpdateParamsCD(filepath=filepath)
+
+        # self.update_params.set_first_gid(self._sampler_gids[0])
+        self.update_params.flush_files()
+
+        first_gid = self._sampler_gids[0]
+
+        self._sim.nest.SetDefaults(
+                self.local_nest_synapse_type, {
+                    "filepath": self.update_params.get_filepath(),
+                    "first_gid" : first_gid,
+                })
+
     def _create_imprint_circuitry(self):
         # allow the user to use the base class for simple runs
         # raise NotImplementedError
@@ -1144,32 +1239,10 @@ class RapidBMBase(BoltzmannMachineBase):
     def _prepare_imprint(self, wipe_start=None):
         raise NotImplementedError
 
-    def create_connectivity(self, **kwargs):
-        # TODO: Add support for TSO
-        if self.saturating_synapses_enabled:
-            log.warn(self.__class__.__name__ + " currently does not support "\
-                    "saturating synapses.")
-
-        global_delay = len(self.delays.shape) == 0
-
-        nest = self._sim.nest
-
-        connectivity_matrix = self.weights_bio != 0.
-
-        self.connectivity_matrix = connectivity_matrix
-
-        gids = self._sampler_gids
-
-        for src, tgt in it.izip(*np.where(connectivity_matrix)):
-            nest.Connect(gids[src], gids[tgt], syn_spec={
-                "weight" : 0.,
-                "delay"  : self.delays[src, tgt] if not global_delay
-                            else self.delays,
-                "model" : self.nest_synapse_type})
-
-        self._nest_connections = nest.GetConnections(gids, gids)
-
     def _ensure_cd_pynn_models(self):
+        """
+            TODO: DELME
+        """
         for i, sampler in enumerate(self.samplers):
             if not sampler.pynn_model.endswith("_cd"):
                 new_model = sampler.pynn_model + "_cd"
@@ -1177,6 +1250,27 @@ class RapidBMBase(BoltzmannMachineBase):
                     sampler.pynn_model, new_model))
                 sampler.neuron_parameters.pynn_model = new_model
 
+    def _copy_synapse_type(self):
+
+        if "synapse_type_to_copy" in self._update_info:
+            self.local_nest_synapse_type = "{}-{}".format(
+                    self._update_info["synapse_type_to_copy"].split("-")[0],
+                    utils.get_random_string(8)
+                )
+            original_synapse_type = self._update_info["synapse_type_to_copy"]
+
+        else:
+            self.local_nest_synapse_type = "{}-{}".format(
+                    self.nest_synapse_type,
+                    utils.get_random_string(8)
+                )
+            original_synapse_type = self.nest_synapse_type
+        self._sim.nest.CopyModel(
+                original_synapse_type,
+                self.local_nest_synapse_type)
+        log.info("Copied nest model: {} -> {}".format(
+            original_synapse_type,
+            self.local_nest_synapse_type))
 
 @meta.HasDependencies
 class RapidBMImprintCurrent(RapidBMBase):
@@ -1474,6 +1568,7 @@ class MixinRBM(object):
         kwargs["num_samplers"] = sum(num_units_per_layer)
 
         super(MixinRBM, self).__init__(*args, **kwargs)
+        log.info("# units per layer: {}".format(num_units_per_layer))
 
     def convert_weights_theo_to_bio(self, weights, out=None):
         if out is None:
@@ -1581,17 +1676,19 @@ class MixinRBM(object):
 
         gids = self._sampler_gids
 
+        self._copy_synapse_type()
+
         for i_l in xrange(self.num_layers-1):
             log.info("Creating connections from layers {} <-> {}".format(
                 i_l, i_l+1))
             nest.Connect(
                     gids[offset[i_l]:offset[i_l+1]],
                     gids[offset[i_l+1]:offset[i_l+2]], 'all_to_all',
-                    syn_spec={"model" : self.nest_synapse_type})
+                    syn_spec={"model" : self.local_nest_synapse_type})
             nest.Connect(
                     gids[offset[i_l+1]:offset[i_l+2]],
                     gids[offset[i_l]:offset[i_l+1]], 'all_to_all',
-                    syn_spec={"model" : self.nest_synapse_type})
+                    syn_spec={"model" : self.local_nest_synapse_type})
 
         connections = nest.GetConnections(gids, gids)
 
@@ -1617,6 +1714,7 @@ class MixinRBM(object):
                 it.chain(l_delay[0].reshape(-1), l_delay[1].T.reshape(-1))])
 
         log.info("Done connecting.")
+        self._create_update_circuitry()
 
     def _check_weight_matrix(self, weights):
 
@@ -1702,7 +1800,11 @@ class ThoroughRBM(MixinRBM, BoltzmannMachineBase):
         # write weights after creation because we are only writing weights once
         self.update_weights_bio()
 
+    def _copy_synapse_type(self):
+        self.local_nest_synapse_type = self.nest_synapse_type
 
+    def _create_update_circuitry(self):
+        pass
 
 
 @meta.HasDependencies
@@ -1724,4 +1826,34 @@ class RapidRBMImprintVmem(MixinRBM, RapidBMImprintVmem):
         RBM with current imprints.
     """
     pass
+
+####################
+# HELPER FUNCTIONS #
+####################
+
+def setup_rapid_bms_for_updates(bms, burn_in_time=100.):
+    """
+        Makes sure the synapses in all rapid BoltzMannMachines
+        are able to learn.
+
+        burn_in_time is the time for which the network will be run; all neurons
+        should be able to spike in this time step if forced via bm.binary_step
+        settings.
+    """
+    for bm in bms:
+        bm.binary_state = np.ones(bm.num_samplers, dtype=int)
+        bm.prepare_run()
+
+    bm._sim.run(burn_in_time)
+
+    for bm in bms:
+        bm.process_run()
+
+        # this is a workaround for a problem with the DependsOn-decorators
+        # if we don't access last spiketimes here the binary_state would
+        # not be udpated when we start the real runs
+        #
+        # Also we make sure that all neurons actually spiked.
+        assert (bm.last_spiketimes > 0).all()
+
 
