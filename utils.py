@@ -43,6 +43,7 @@ __all__ = [
     "save_pickle",
     "sigmoid",
     "sigmoid_trans",
+    "ensure_divs"
 ]
 
 def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
@@ -448,4 +449,10 @@ def dkl_sum_marginals(ps, qs):
     for p, q in it.izip(ps, qs):
         dkl += p * np.log(p/q) + (1. - p) * np.log((1.-p)/(1.-q))
     return dkl
+
+def ensure_divs(count, mod):
+    if count <= mod:
+        return mod
+    else:
+        return count - count % mod
 
