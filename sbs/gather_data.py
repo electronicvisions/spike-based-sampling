@@ -112,6 +112,9 @@ def make_log_time(duration, num_steps=10, offset=0):
 
 # get callbacks dependant on backend
 def get_callbacks(sim, log_time_params):
+    """
+        `sim` should be the simulator backend used.
+    """
 
     if sim.__name__.split(".")[-1] == "neuron":
         # neuron does not wörk with callbacks
@@ -126,7 +129,7 @@ def get_callbacks(sim, log_time_params):
 # SAMPLER HELPER FUNCTIONS #
 ############################
 
-@comm.RunInSubprocess
+# @comm.RunInSubprocess
 def gather_calibration_data(
         sampler_config=None):
     """
@@ -152,10 +155,10 @@ def gather_calibration_data(
     total_duration = burn_in_time + duration
 
     # TODO maybe implement a seed here
-    sim.setup(time_step=calibration.dt)
+    sim.setup(timestep=calibration.dt)
 
     # create sources
-    sources = bb.create_sources(sim, calibration.source_config, total_duration)
+    # sources = bb.create_sources(sim, calibration.source_config, total_duration)
 
     log.info("Setting up {} samplers.".format(len(samples_v_rest)))
     if log.getEffectiveLevel() <= logging.DEBUG:
@@ -173,8 +176,10 @@ def gather_calibration_data(
             log.debug("v_rest of neuron #{}: {} mV".format(i, s.v_rest))
 
     # connect the two
-    projections = bb.connect_sources(sim, calibration.source_config, sources,
-            samplers)
+    # projections = bb.connect_sources(sim, calibration.source_config, sources,
+            # samplers)
+    sources, projection = calibration.source_config.create_connect(sim,
+            samplers, duration=total_duration)
 
     callbacks = get_callbacks(sim, {
             "duration" : calibration.duration,
@@ -207,10 +212,8 @@ def gather_calibration_data(
     return samples_p_on
 
 
-@comm.RunInSubprocess
-def gather_free_vmem_trace(distribution_params, pynn_model,
-                neuron_params, source_config, sim_name,
-                adjusted_v_thresh=50.):
+# @comm.RunInSubprocess
+def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     """
         Records a voltage trace of the free membrane potential of the given
         neuron model with the given parameters.
@@ -220,18 +223,25 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
     """
     dp = distribution_params
     log.info("Preparing to take free Vmem distribution")
-    exec("import {} as sim".format(sim_name))
+    exec("import {} as sim".format(sampler.sim_name))
 
-    sim.setup(time_step=dp["dt"])
+    sim.setup(timestep=dp["dt"])
 
-    sources = bb.create_sources(sim, source_config, dp["duration"])
+    total_duration = dp["duration"] + dp["burn_in_time"]
 
-    population = sim.Population(1, getattr(sim, pynn_model)(**neuron_params))
+    population = sampler.create(total_duration)
+
+    # sources = bb.create_sources(sim, source_config, dp["duration"])
+
+    # population = sim.Population(1, getattr(sim, pynn_model)(**neuron_params))
     population.record("v")
-    population.initialize(v=neuron_params["v_rest"])
+    population.initialize(v=sampler.get_pynn_parameters()["v_rest"])
     population.set(v_thresh=adjusted_v_thresh)
 
-    projections = bb.connect_sources(sim, source_config, sources, population)
+    # projections = bb.connect_sources(sim, source_config, sources, population)
+
+    # sources, projections = source_config.create_connect(sim, population,
+            # duration=dp["duration"])
 
     callbacks = get_callbacks(sim, {
             "duration" : dp["duration"],
@@ -258,7 +268,7 @@ def gather_free_vmem_trace(distribution_params, pynn_model,
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-# @RunInSubprocess
+@RunInSubprocess
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """
@@ -273,7 +283,7 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
 
     exec "import {} as sim".format(network.sim_name) in globals(), locals()
 
-    sim.setup(time_step=dt, **sim_setup_kwargs)
+    sim.setup(timestep=dt, **sim_setup_kwargs)
 
     if create_kwargs is None:
         create_kwargs = {}

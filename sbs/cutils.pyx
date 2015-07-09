@@ -459,7 +459,7 @@ def generate_states(
     cdef np.ndarray[np.int_t, ndim=1] current_state = np.zeros((num_samplers,),
             dtype=np.int)
 
-    while current_step < duration:
+    while current_step <= duration-steps_per_sample:
 
         # print "Setting last spiketimes"
 

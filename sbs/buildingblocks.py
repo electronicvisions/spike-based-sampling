@@ -36,7 +36,6 @@ def create_sources(sim, source_config, duration):
 
     elif isinstance(source_config, db.FixedSpikeTrainConfiguration):
         # TODO: test me
-        
         log.info("Setting up fixed spike train sources.")
         weights = source_config.weights
         spike_times = source_config.spike_times
@@ -90,7 +89,7 @@ def connect_sources(sim, source_config, sources, target):
                 receptor_type=rectype)
 
     elif isinstance(source_config, db.FixedSpikeTrainConfiguration):
-	    # TODO: test me
+        # TODO: test me
         projections = {}
 
         column_names = ["weight"]

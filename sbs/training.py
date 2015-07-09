@@ -322,7 +322,7 @@ def train_rbm_ppcd(
 
         visible_state_data = training_data[i_l, i_samples]
         binary_state = np.ones(bm["data"].num_samplers) + 1 # per default set nothing
-        # binary_state[:num_visible] = visible_state_model
+        binary_state[:num_visible] = visible_state_model
         bm["data"].binary_state = binary_state
 
         # not needed since no state is set

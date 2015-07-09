@@ -11,6 +11,8 @@ import subprocess as sp
 import os.path as osp
 import cPickle as pkl
 import os
+import atexit
+import functools as ft
 
 from .logcfg import log
 from . import utils
@@ -94,6 +96,8 @@ class RunInSubprocess(object):
         try:
             socket, address, port = self._setup_socket_host()
             script_filename = self._setup_script_file(address, port)
+            atexit.register(ft.partial(_delete_script_file,
+                script_filename, warn=False))
 
             socket.listen(1)
 
@@ -111,7 +115,7 @@ class RunInSubprocess(object):
             if process is not None and process.poll() is None:
                 process.kill()
             if script_filename is not None:
-                self._delete_script_file(script_filename)
+                _delete_script_file(script_filename)
 
         return return_values
 
@@ -243,10 +247,15 @@ class RunInSubprocess(object):
 
         return filename
 
-    def _delete_script_file(self, script_filename):
-        try:
-            os.remove(script_filename)
-            log.debug("Deleted script file.")
-        except OSError:
-            log.warn("Could not delete temporary script file for subprocess.")
+
+# utility functions
+
+def _delete_script_file(script_filename, warn=True):
+    try:
+        os.remove(script_filename)
+        log.debug("Deleted script file.")
+    except OSError:
+        if warn:
+            log.warn(
+                "Could not delete temporary script file for subprocess.")
 

@@ -20,12 +20,12 @@ class LIFsampler(object):
     supported_pynn_neuron_models = [
             "IF_curr_exp",
             "IF_cond_exp",
-            "IF_cond_exp_cd",
-            "IF_curr_exp_cd",
+            # "IF_cond_exp_cd",
+            # "IF_curr_exp_cd",
             "IF_curr_alpha",
             "IF_cond_alpha",
-            "IF_cond_alpha_cd",
-            "IF_curr_alpha_cd",
+            # "IF_cond_alpha_cd",
+            # "IF_curr_alpha_cd",
         ]
 
     def __init__(self, sampler_config, sim_name="pyNN.nest", silent=False):
@@ -55,9 +55,15 @@ class LIFsampler(object):
 
         self.bias_theo = 0.
 
-        self.free_vmem_trace = None
+        self.free_vmem = None
 
+        # population or population slice describing this particular 
         self.population = None
+
+        # the network in which this sampler is embedded, this is set from the
+        # Boltzmann Machines
+        self.network = {'population': None, 'index': None}
+
         self.sources = None
         self.source_populations = None
 
@@ -145,7 +151,7 @@ class LIFsampler(object):
 
     @property
     def has_free_vmem_trace(self):
-        return self.free_vmem_trace is not None
+        return self.free_vmem is not None
 
     def get_pynn_parameters(self, adjust_v_rest=True):
         """
@@ -277,18 +283,16 @@ class LIFsampler(object):
 
         from .gather_data import gather_free_vmem_trace
 
-        self.free_vmem_trace = gather_free_vmem_trace(
-                distribution_params={
+        self.free_vmem = {
+                "trace" : gather_free_vmem_trace(
+                    distribution_params={
                         "duration": duration,
                         "dt": dt,
                         "burn_in_time": burn_in_time,
-                    },
-                pynn_model=self.pynn_model,
-                neuron_params=self.get_pynn_parameters(),
-                source_config=self.calibration.source_config,
-                sim_name=self.sim_name
-            )
-        self.free_vmem_trace_dt = dt
+                        },
+                    sampler=self),
+                "dt" : dt
+            }
 
     def get_all_source_parameters(self):
         """
@@ -457,10 +461,12 @@ class LIFsampler(object):
         if create_pynn_sources == True:
             assert duration is not None, "Instructed to create sources "\
                     "without duration!"
-            source_config = self.calibration.source_config
-            self.sources = bb.create_sources(sim, source_config, duration)
-            self.source_projections = bb.connect_sources(sim, source_config,
-                    self.sources, self.population)
+            self.calibration.source_config.create_connect(
+                    sim, [self], duration=duration)
+            # source_config = self.calibration.source_config
+            # self.sources = bb.create_sources(sim, source_config, duration)
+            # self.source_projections = bb.connect_sources(sim, source_config,
+                    # self.sources, self.population)
 
         return self.population
 
@@ -517,7 +523,7 @@ class LIFsampler(object):
         assert self.has_free_vmem_trace
         assert self.is_calibrated
 
-        volttrace = self.free_vmem_trace
+        volttrace = self.free_vmem["trace"]
 
         counts, bins, patches = ax.hist(volttrace, bins=num_bins, normed=True,
                 fc="None")
@@ -554,10 +560,10 @@ class LIFsampler(object):
                            the autocorrelation should be calculated.
         """
         assert self.has_free_vmem_trace
-        autocorr = cutils.autocorr(self.free_vmem_trace, max_step_diff)
+        autocorr = cutils.autocorr(self.free_vmem["trace"], max_step_diff)
 
         ax.plot(np.arange(1, max_step_diff+1)
-                * self.free_vmem_trace_dt, autocorr)
+                * self.free_vmem_trace["dt"], autocorr)
 
         ax.set_xlabel("$\Delta$ T [ms]")
         ax.set_ylabel("Correlation")

@@ -5,107 +5,17 @@ import json
 import os.path as osp
 import numpy as np
 import copy
-
 import collections as c
 
-from .logcfg import log
+
+from .core import Data
+from .sources import *
+from ..logcfg import log
+
 
 def setup(*args, **kwargs):
     log.error("The database was discontinued and is without use. Please update "
             "your script accordingly!")
-
-class Data(object):
-    """
-        Baseclass for all data objects
-    """
-    # dict mapping data attribute names to types
-    data_attribute_types = {}
-
-    @classmethod
-    def load(cls, filepath=None):
-        with open(filepath) as f:
-            datadict = json.load(f)
-
-        if datadict["_type"] != cls.__name__:
-            log.warn("Using json data for type {} to create type {}".format(
-                datadict["_type"], cls.__name__))
-        del datadict["_type"]
-
-        return cls(**datadict)
-
-    def __init__(self, **attributes):
-        self._from_dict(attributes)
-
-        # set all those attributes that werent specified
-        self._empty()
-
-    def get_dict(self):
-        return self._to_dict(with_type=False)
-
-    def write(self, path):
-        if osp.splitext(path)[1] != ".json":
-            path += ".json"
-
-        with open(path, "w") as f:
-            json.dump(self._to_dict(), f,
-                    ensure_ascii=False, indent=2)
-
-    def copy(self):
-        return self.__class__(**self._to_dict())
-
-    def _empty(self):
-        """
-            Set everything apart from class constants
-        """
-        for d in self.data_attribute_types:
-            if not hasattr(self, d):
-                setattr(self, d, None)
-
-    def _to_dict(self, with_type=True):
-        dikt = {d: self._convert_attr(d, with_type=with_type)
-                for d in self.data_attribute_types}
-        if with_type:
-            dikt["_type"] = self.__class__.__name__
-        return dikt
-
-    def _convert_attr(self, name, with_type):
-        d = getattr(self, name)
-
-        if isinstance(d, Data):
-            return d._to_dict(with_type=with_type)
-
-        if isinstance(d, np.ndarray):
-            return d.tolist()
-
-        return copy.deepcopy(d)
-
-    def _from_dict(self, dikt):
-        for name, d in dikt.iteritems():
-            if name == "_type":
-                continue
-            try:
-                desired_type = self.data_attribute_types[name]
-            except KeyError:
-                log.error("[{}] Unexpected attribute: {}".format(
-                    self.__class__.__name__, name))
-                continue
-
-            if hasattr(self, name):
-                # class constants are skipped
-                continue
-
-            if isinstance(d, dict) and issubclass(desired_type, Data):
-                if d["_type"] != desired_type.__name__:
-                    new_desired_type = globals()[d["_type"]]
-                    assert issubclass(new_desired_type, desired_type)
-                    desired_type = new_desired_type
-                del d["_type"]
-                d = desired_type(**d)
-
-            elif d is not None and issubclass(desired_type, np.ndarray):
-                d = np.array(d)
-
-            setattr(self, name, d)
 
 
 class NeuronParameters(Data):
@@ -190,36 +100,6 @@ class NeuronParametersCurrentAlpha(NeuronParameters):
         "v_reset"    : float, # mV  Reset potential after a spike
         "v_thresh"   : float, # mV  Spike threshold
     }.items())
-
-
-class SourceConfiguration(Data):
-    pass
-
-
-class PoissonSourceConfiguration(SourceConfiguration):
-    """
-        Positive weights: excitatory
-        Negative weights: inhibitory
-    """
-    data_attribute_types = {
-            "rates" : np.ndarray,
-            "weights" : np.ndarray,
-        }
-
-
-class FixedSpikeTrainConfiguration(SourceConfiguration):
-    """
-        Positive weights: excitatory
-        Negative weights: inhibitory
-
-        Spike times in ms.
-    """
-    data_attribute_types = {
-            "rates" : np.ndarray,
-            "weights" : np.ndarray,
-            "spike_times" : np.ndarray,
-            "spike_ids" : np.ndarray,
-        }
 
 
 class Fit(Data):

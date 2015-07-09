@@ -72,6 +72,7 @@ class BoltzmannMachineBase(object):
         # biases are set to zero automaticcaly by the samplers
 
         self.saturating_synapses_enabled = False
+        self.use_proper_tso = True
         self.delays = 0.1
 
     ########################
@@ -287,89 +288,6 @@ class BoltzmannMachineBase(object):
         return self.population is not None
 
 
-    #########################
-    # gather spikes methods #
-    #########################
-
-    # methods to gather data
-    @meta.DependsOn()
-    def spike_data(self, spike_data=None):
-        """
-            The spike data from which to compute distributions.
-        """
-        if spike_data is not None:
-            assert "spiketrains" in spike_data
-            assert "duration" in spike_data
-            return spike_data
-        else:
-            # We are requesting data when there is None
-            return None
-
-    def gather_spikes(self, duration, dt=0.1, burn_in_time=100.,
-            create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
-        """
-            sim_setup_kwargs are the kwargs for the simulator (random seeds).
-
-            initial_vmem are the initialized voltages for all samplers.
-        """
-        log.info("Gathering spike data in subprocess..")
-        self.spike_data = gather_data.gather_network_spikes(self,
-                duration=duration, dt=dt, burn_in_time=burn_in_time,
-                create_kwargs=create_kwargs,
-                sim_setup_kwargs=sim_setup_kwargs,
-                initial_vmem=initial_vmem)
-
-
-    def get_sample_states(self, time_per_sample=10.):
-        dt = self.spike_data.get("dt", 0.1)
-
-        steps_per_sample = int(time_per_sample / dt)
-
-        return cutils.generate_states(
-                spike_ids=self.selected_sampler_spikes["id"],
-                spike_times=np.array(self.selected_sampler_spikes["t"] / dt,
-                    dtype=int),
-                tau_refrac_pss=np.array([
-                    int(self.samplers[i].neuron_parameters.tau_refrac / dt)
-                    for i in self.selected_sampler_idx]),
-                num_samplers=len(self.selected_sampler_idx),
-                steps_per_sample=steps_per_sample,
-                duration=np.array(self.spike_data["duration"] / dt, dtype=int)
-            )
-
-
-    @meta.DependsOn("spike_data")
-    def selected_sampler_spikes(self):
-        log.info("Getting ordered spikes for selected samplers.")
-        spikes = self.ordered_spikes
-
-        selected_idx = np.zeros(spikes.size, dtype=bool)
-
-        for idx in self.selected_sampler_idx:
-            selected_idx += spikes["id"] == idx
-
-        spikes = spikes[selected_idx].copy()
-        new_idx = np.zeros_like(spikes["id"])
-
-        for i, idx in enumerate(self.selected_sampler_idx):
-            new_idx[spikes["id"] == idx] = i
-
-        spikes["id"] = new_idx
-
-        return spikes
-
-    @meta.DependsOn("spike_data")
-    def ordered_spikes(self):
-        log.info("Getting ordered spikes")
-        return utils.get_ordered_spike_idx(self.spike_data["spiketrains"])
-
-    @meta.DependsOn()
-    def selected_sampler_idx(self, selected_sampler_idx=None):
-        if selected_sampler_idx is None:
-            return np.arange(self.num_samplers, dtype=np.int) 
-        else:
-            return np.array(list(set(selected_sampler_idx)), dtype=np.int)
-
     ################
     # PYNN methods #
     ################
@@ -412,13 +330,15 @@ class BoltzmannMachineBase(object):
 
         log.info("Creating samplers.")
         self.population = self.create_population(**kwargs)
+        self._set_network_in_samplers()
+
         log.info("Connecting samplers.")
         self.projections = self.create_connectivity(**kwargs)
 
         return self.population, self.projections
 
     def create_population(self, duration=None, _nest_optimization=True,
-            _nest_source_model=None, _nest_source_model_kwargs=None, **kwargs):
+            custom_source_config=None, **kwargs):
 
         assert duration is not None, "Duration must be set!"
         exec "import {} as sim".format(self.sim_name) in globals(), locals()
@@ -430,7 +350,7 @@ class BoltzmannMachineBase(object):
         # the user requests it
         _nest_optimization = _nest_optimization and hasattr(sim, "nest")
 
-        log.info("Setting up population for duration: {}s".format(duration))
+        log.info("Setting up population for duration: {}ms".format(duration))
 
         log.info("PyNN-model: {}".format(self.samplers[0].pynn_model))
         population = sim.Population(self.num_samplers,
@@ -442,17 +362,31 @@ class BoltzmannMachineBase(object):
             # if we are performing nest optimizations, the sources will be
             # created afterwards
             sampler.create(duration=duration, population=local_pop,
-                    create_pynn_sources=not _nest_optimization)
+                    create_pynn_sources=False)
 
-        if _nest_optimization:
-            log.info("Creating nest sources of type {}.".format(_nest_source_model))
+
+        if custom_source_config is not None:
+            self._source, self._projections = custom_source_config.create_connect(
+                    sim, population, duration=duration,
+                    nest_optimized=_nest_optimization)
+
+        # check whether we have the same source configuration for everything
+        # if all(s.calibration.source_config ==\
+                # self.samplers[0].calibration.source_config for s in self.samplers):
+        self._sources, self._projections = db.sources_create_connect(sim,
+                population,
+                duration=duration,
+                nest_optimized=_nest_optimization)
+
+        # if _nest_optimization:
+            # log.info("Creating nest sources of type {}.".format(_nest_source_model))
 
             # make sure the objects returned are referenced somewhere
-            self._nest_sources, self._nest_projections =\
-                    bb.create_nest_optimized_sources(
-                    sim, self.samplers, population, duration,
-                    source_model=_nest_source_model,
-                    source_model_kwargs=_nest_source_model_kwargs)
+            # self._nest_sources, self._nest_projections =\
+                    # bb.create_nest_optimized_sources(
+                    # sim, self.samplers, population, duration,
+                    # source_model=_nest_source_model,
+                    # source_model_kwargs=_nest_source_model_kwargs)
 
         return population
 
@@ -494,6 +428,10 @@ class BoltzmannMachineBase(object):
 
         return delays
 
+    def _set_network_in_samplers(self):
+        for i, s in enumerate(self.samplers):
+            s.network["population"] = self.population
+            s.network["index"] = i
 
 @meta.HasDependencies
 class ThoroughBM(BoltzmannMachineBase):
@@ -627,6 +565,88 @@ class ThoroughBM(BoltzmannMachineBase):
         # self.spike_data = state["spike_data"]
         # self.selected_sampler_idx = state["selected_sampler_idx"]
 
+
+    #########################
+    # gather spikes methods #
+    #########################
+
+    # methods to gather data
+    @meta.DependsOn()
+    def spike_data(self, spike_data=None):
+        """
+            The spike data from which to compute distributions.
+        """
+        if spike_data is not None:
+            assert "spiketrains" in spike_data
+            assert "duration" in spike_data
+            return spike_data
+        else:
+            # We are requesting data when there is None
+            return None
+
+    def gather_spikes(self, duration, dt=0.1, burn_in_time=100.,
+            create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
+        """
+            sim_setup_kwargs are the kwargs for the simulator (random seeds).
+
+            initial_vmem are the initialized voltages for all samplers.
+        """
+        log.info("Gathering spike data in subprocess..")
+        self.spike_data = gather_data.gather_network_spikes(self,
+                duration=duration, dt=dt, burn_in_time=burn_in_time,
+                create_kwargs=create_kwargs,
+                sim_setup_kwargs=sim_setup_kwargs,
+                initial_vmem=initial_vmem)
+
+    def get_sample_states(self, time_per_sample=10.):
+        dt = self.spike_data.get("dt", 0.1)
+
+        steps_per_sample = int(time_per_sample / dt)
+
+        return cutils.generate_states(
+                spike_ids=self.selected_sampler_spikes["id"],
+                spike_times=np.array(self.selected_sampler_spikes["t"] / dt,
+                    dtype=int),
+                tau_refrac_pss=np.array([
+                    int(self.samplers[i].neuron_parameters.tau_refrac / dt)
+                    for i in self.selected_sampler_idx]),
+                num_samplers=len(self.selected_sampler_idx),
+                steps_per_sample=steps_per_sample,
+                duration=np.array(self.spike_data["duration"] / dt, dtype=int)
+            )
+
+
+    @meta.DependsOn("spike_data")
+    def selected_sampler_spikes(self):
+        log.info("Getting ordered spikes for selected samplers.")
+        spikes = self.ordered_spikes
+
+        selected_idx = np.zeros(spikes.size, dtype=bool)
+
+        for idx in self.selected_sampler_idx:
+            selected_idx += spikes["id"] == idx
+
+        spikes = spikes[selected_idx].copy()
+        new_idx = np.zeros_like(spikes["id"])
+
+        for i, idx in enumerate(self.selected_sampler_idx):
+            new_idx[spikes["id"] == idx] = i
+
+        spikes["id"] = new_idx
+
+        return spikes
+
+    @meta.DependsOn("spike_data")
+    def ordered_spikes(self):
+        log.info("Getting ordered spikes")
+        return utils.get_ordered_spike_idx(self.spike_data["spiketrains"])
+
+    @meta.DependsOn()
+    def selected_sampler_idx(self, selected_sampler_idx=None):
+        if selected_sampler_idx is None:
+            return np.arange(self.num_samplers, dtype=np.int) 
+        else:
+            return np.array(list(set(selected_sampler_idx)), dtype=np.int)
 
 
     ################
@@ -835,7 +855,6 @@ class ThoroughBM(BoltzmannMachineBase):
 
         ax.set_xlabel("sampler id")
         ax.set_ylabel("sampler id")
-
 
 @meta.HasDependencies
 class RapidBMBase(BoltzmannMachineBase):
