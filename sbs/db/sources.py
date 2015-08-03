@@ -189,7 +189,7 @@ class PoissonSourceConfiguration(SourceConfiguration):
         # whether we are connecting to a regular population (calibration etc)
         # or to a list of samplers that a) have the same rates or b) have
         # different rates
-
+        
         if hasattr(sim, "nest") and nest_optimized:
             sources, projections = self.create_nest_optimized(
                     sim, samplers, duration)
@@ -259,6 +259,8 @@ class PoissonSourceConfiguration(SourceConfiguration):
                     dtype=int) + len(self.rates)
             rates = np.hstack((self.rates for s in samplers))
             weights = it.repeat(self.weights)
+            if self.weights[0]*self.weights[1]>0:
+                raise ValueError("Noise weights are both excitatory. Aborting.")
 
         # we want a mapping from each samplers sources into a large flattened
         # array

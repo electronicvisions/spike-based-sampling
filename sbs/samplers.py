@@ -58,7 +58,7 @@ class LIFsampler(object):
 
         self.free_vmem = None
 
-        # population or population slice describing this particular 
+        # population or population slice describing this particular
         self.population = None
 
         # the network in which this sampler is embedded, this is set from the
@@ -355,7 +355,7 @@ class LIFsampler(object):
                 # (cm - g_tot * tau[is_exc_int]) *\
                 # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
                     # + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                # ) / self.calibration.fit.alpha * g_tot / self.neuron_params.g_l 
+                # ) / self.calibration.fit.alpha * g_tot / self.neuron_params.g_l
         # elif self.pynn_model == "IF_curr_exp":
             # theo_weights = weights / (cm - g_tot * tau[is_exc_int]) *\
                 # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
@@ -526,6 +526,33 @@ class LIFsampler(object):
 
         ax.legend(bbox_to_anchor=(1.15, .5))
 
+    @meta.plot_function("calibration_residuals")
+    def plot_calibration_residuals(self, plot_v_dist_theo=False, plot_vlines=True,
+            width=4., npoints=500, fig=None, ax=None):
+        assert self.is_calibrated
+
+        self._calc_distribution_theo()
+
+        samples_v_rest = self.calibration.get_samples_v_rest()
+        samples_p_on = self.calibration.samples_p_on
+
+        v_thresh = self.neuron_parameters.v_thresh
+        v_p05 = self.calibration.fit.v_p05
+        std = self.dist_theo.std
+
+        xdata = np.linspace(v_thresh-width*std, v_thresh+width*std, npoints)
+
+
+        fitted_p_on = utils.sigmoid_trans(samples_v_rest, v_p05,
+                self.calibration.fit.alpha)
+
+        ax.plot(samples_v_rest, samples_p_on-fitted_p_on, label="residuals")
+
+        ax.set_xlabel("$V_{rest}$")
+        ax.set_ylabel("$p_{ON}$")
+
+        ax.legend(bbox_to_anchor=(1.15, .5))
+
     @meta.plot_function("free_vmem_dist")
     def plot_free_vmem(self, num_bins=200, plot_vlines=True, fig=None, ax=None):
         assert self.has_free_vmem_trace
@@ -626,7 +653,7 @@ class LIFsampler(object):
                         - tau_r * tau * np.exp(-tau_r/tau)
                         + tau_c * (
                               tau_eff * (np.exp(-tau_r/tau_eff)- 1 )
-                            - tau * (np.exp(-tau_r / tau) - 1) 
+                            - tau * (np.exp(-tau_r / tau) - 1)
                           )
                     )
 

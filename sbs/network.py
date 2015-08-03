@@ -639,7 +639,7 @@ class ThoroughBM(BoltzmannMachineBase):
     @meta.DependsOn()
     def selected_sampler_idx(self, selected_sampler_idx=None):
         if selected_sampler_idx is None:
-            return np.arange(self.num_samplers, dtype=np.int) 
+            return np.arange(self.num_samplers, dtype=np.int)
         else:
             return np.array(list(set(selected_sampler_idx)), dtype=np.int)
 
@@ -876,7 +876,7 @@ class RapidBMBase(BoltzmannMachineBase):
 
         self.time_sim_step = 30. # ms
         self.time_wipe = 50. # time between silence and imprint
-        self.time_imprint = 30. # how long are the 
+        self.time_imprint = 30. # how long are the
         self._update_num = 0
         self._update_info = {
                 "to_notify" : set(),
