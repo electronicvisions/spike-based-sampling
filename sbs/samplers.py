@@ -725,7 +725,7 @@ class LIFsampler(object):
 
         if len(idx) > 0:
             idx_low = max(0, idx[0]-1)
-            idx_high = min(samples_p_on.size, idx[-1]+1)
+            idx_high = min(samples_p_on.size-1, idx[-1]+1)
 
         else:
             idx_high = np.where(samples_p_on > pre_calib.upper_bound)[0][0]

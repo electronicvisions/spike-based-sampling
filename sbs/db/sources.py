@@ -23,6 +23,8 @@ def sources_create_connect(sim, samplers, duration, **kwargs):
 
         It seperates the samplers into subgroups that have the same type
         of source config.
+
+        Returns a list of created sources.
     """
     sampler_same_src_cfg = [
             [samplers[0]]
@@ -40,11 +42,10 @@ def sources_create_connect(sim, samplers, duration, **kwargs):
         results.append(l_samplers[0].source_config.create_connect(
             sim, l_samplers, duration, **kwargs))
 
-    if len(results) == 1:
-        return results[0]
-    else:
-        return results
-
+    #  if len(results) == 1:
+        #  return results[0]
+    #  else:
+    return results
 
 
 class SourceConfiguration(Data):
@@ -138,7 +139,6 @@ def connect_one_to_one(sim, sources, population, weights):
                 receptor_type=rectype))
 
     return projections
-
 
 def get_population_from_samplers(sim, samplers):
     """
@@ -327,7 +327,7 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         for i, src in enumerate(sources):
             local_spike_times = self.spike_times[self.spike_ids == i]
             src.spike_times = local_spike_times
-            src.rate = rates[i]
+            src.rate = self.rates[i]
 
         log.info("Created {} fixed spike train sources.".format(num_sources)) 
 

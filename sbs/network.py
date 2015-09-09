@@ -366,15 +366,16 @@ class BoltzmannMachineBase(object):
 
 
         if custom_source_config is not None:
-            self._source, self._projections = custom_source_config.create_connect(
+            # create a list to be compatible to below
+            self._pynn_sources = [custom_source_config.create_connect(
                     sim, population, duration=duration,
-                    nest_optimized=_nest_optimization)
+                    nest_optimized=_nest_optimization)]
 
         # check whether we have the same source configuration for everything
         # if all(s.calibration.source_config ==\
                 # self.samplers[0].calibration.source_config for s in self.samplers):
-        self._sources, self._projections = db.sources_create_connect(sim,
-                population,
+        self._pynn_sources = db.sources_create_connect(sim,
+                self.samplers,
                 duration=duration,
                 nest_optimized=_nest_optimization)
 
