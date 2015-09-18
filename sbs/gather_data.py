@@ -129,7 +129,7 @@ def get_callbacks(sim, log_time_params):
 # SAMPLER HELPER FUNCTIONS #
 ############################
 
-# @comm.RunInSubprocess
+@comm.RunInSubprocess
 def gather_calibration_data(
         sampler_config=None):
     """
@@ -143,6 +143,11 @@ def gather_calibration_data(
     calibration = sampler_config.calibration
     neuron_params = sampler_config.neuron_parameters
 
+    if calibration.sim_setup_kwargs is None:
+        sim_setup_kwargs = {}
+    else:
+        sim_setup_kwargs = calibration.sim_setup_kwargs
+
     exec("import {} as sim".format(calibration.sim_name))
 
     samples_v_rest = calibration.get_samples_v_rest()
@@ -155,7 +160,7 @@ def gather_calibration_data(
     total_duration = burn_in_time + duration
 
     # TODO maybe implement a seed here
-    sim.setup(timestep=calibration.dt)
+    sim.setup(timestep=calibration.dt, **sim_setup_kwargs)
 
     # create sources
     # sources = bb.create_sources(sim, calibration.source_config, total_duration)
@@ -225,7 +230,12 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     log.info("Preparing to take free Vmem distribution")
     exec("import {} as sim".format(sampler.sim_name))
 
-    sim.setup(timestep=dp["dt"])
+    if sampler.calibration.sim_setup_kwargs is None:
+        sim_setup_kwargs = {}
+    else:
+        sim_setup_kwargs = sampler.calibration.sim_setup_kwargs
+
+    sim.setup(timestep=dp["dt"], **sim_setup_kwargs)
 
     total_duration = dp["duration"] + dp["burn_in_time"]
 

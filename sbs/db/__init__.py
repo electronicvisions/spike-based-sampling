@@ -115,6 +115,7 @@ class Fit(Data):
 class Calibration(Data):
     data_attribute_types = {
         "sim_name" : str,
+        "sim_setup_kwargs" : dict,
 
         "duration" : float,
         "dt" : float,
@@ -149,6 +150,7 @@ class PreCalibration(Data):
     """
     data_attribute_types = {
         "sim_name" : str,
+        "sim_setup_kwargs" : dict,
 
         "duration" : float,
         "dt" : float,

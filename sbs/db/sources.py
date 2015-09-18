@@ -280,20 +280,33 @@ class PoissonSourceConfiguration(SourceConfiguration):
 
         cur_source = 0
         for i, (sampler, weights) in enumerate(it.izip(samplers, weights)):
+            is_list = isinstance(population, list)
+            if is_list:
+                pop = population[i]
+            else:
+                pop = population
+
             for j, weight in enumerate(weights):
                 connections[conn_type[weight > 0]].append(
-                        (idx_to_src_id[cur_source], i, np.abs(weight)
-                            if population.conductance_based else weight))
+                        (idx_to_src_id[cur_source],
+                            # if we have a list each sampler is on its own
+                            i if is_list else 0, np.abs(weight)
+                            if pop.conductance_based else weight))
                 cur_source += 1
 
+
+        if not isinstance(population, list):
+            population = [population]
+
         projections = {}
-        for ct in conn_type:
-            projections[ct] = sim.Projection(
-                    sources, population,
-                    receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
-                    synapse_type=sim.StaticSynapse(),
-                    connector=sim.FromListConnector(connections[ct],
-                        column_names=["weight"]))
+        for pop in population:
+            for ct in conn_type:
+                projections[ct] = sim.Projection(
+                        sources, pop,
+                        receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
+                        synapse_type=sim.StaticSynapse(),
+                        connector=sim.FromListConnector(connections[ct],
+                            column_names=["weight"]))
 
         return sources, projections
 

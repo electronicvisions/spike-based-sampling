@@ -142,6 +142,13 @@ class LIFsampler(object):
         return value
 
     @property
+    def source_config(self):
+        """
+            Can only be set by modifying the calibration.
+        """
+        return self.calibration.source_config
+
+    @property
     def is_calibrated(self):
         return self.calibration is not None
 
@@ -661,7 +668,8 @@ class LIFsampler(object):
             duration=1000., #  time spent when scanning for the sigmoid
             max_search_steps=100,
         )
-        for k in ["sim_name", "burn_in_time", "dt", "source_config"]:
+        for k in ["sim_name", "sim_setup_kwargs", "burn_in_time", "dt",
+                "source_config"]:
             setattr(pre_calib, k, getattr(calibration, k))
 
         for k,v in pre_calibration_parameters.iteritems():
