@@ -82,7 +82,7 @@ def calibration():
             duration=1e5, num_samples=150, burn_in_time=500., dt=0.01,
             source_config=source_config,
             sim_name=sim_name,
-            sim_setup_kwargs={"spike_precision": "on_grid"})
+            sim_setup_kwargs={"spike_precision": "on_grid", "min_delay" : 0.01})
     # Do not forget to specify the source configuration!
 
     # here we could give further kwargs for the pre-calibration phase when the
@@ -125,7 +125,7 @@ def calibration_curr():
             duration=1e5, num_samples=150, burn_in_time=500., dt=0.01,
             source_config=source_config,
             sim_name=sim_name,
-            sim_setup_kwargs={"spike_precision": "on_grid"})
+            sim_setup_kwargs={"spike_precision": "on_grid", "min_delay": 0.01})
     # Do not forget to specify the source configuration!
 
     # here we could give further kwargs for the pre-calibration phase when the
@@ -317,6 +317,102 @@ def sample_network_curr():
 
     bm.plot_dist_marginal(save=True)
     bm.plot_dist_joint(save=True)
+
+def sample_network_fixed_spikes():
+    """
+        Demonstrating how to setup and use FixedSpikeTrain sources
+        with already pre-calibrated neurons.
+
+        Please note that the rates of the FixedSpikeTrains should roughly
+        correspond to the rates of the random sources used to calibrate the
+        network!
+
+        Also note that because these are just some fixed spike trains the DKL
+        etc will be horrible in this example (but that is not the point here).
+    """
+    np.random.seed(42)
+
+    # Networks can be saved outside of the database.
+    filename = "tutorial-network.pkl.gz"
+    duration = 1e4
+
+    # Try to load the network from file. This function returns None if no
+    # network could be loaded.
+    # No network loaded, we need to create it. We need to specify how many
+    # samplers we want and what neuron parameters they should have. Refer
+    # to the documentation for all the different ways this is possible.
+
+    sampler_config = sbs.db.SamplerConfiguration.load(
+            "tutorial_calibration.json")
+
+    isi = 1000./sampler_config.calibration.source_config.rates[0]
+    offset = 1.
+
+    spike_times = np.arange(1., duration, isi)
+    num_spikes = spike_times.size
+
+
+    sampler_config.source_config = sbs.db.FixedSpikeTrainConfiguration(
+            spike_times=np.r_[spike_times, spike_times+offset],
+            spike_ids=np.array([0] * num_spikes + [1] * num_spikes),
+            weights=sampler_config.calibration.source_config.weights
+        )
+
+    bm = sbs.network.ThoroughBM(num_samplers=5,
+            sim_name=sim_name, sampler_config=sampler_config)
+
+    # Set random symmetric weights.
+    weights = np.random.randn(bm.num_samplers, bm.num_samplers)
+    weights = (weights + weights.T) / 2.
+    bm.weights_theo = weights
+
+    # Set random biases.
+    bm.biases_theo = np.random.randn(bm.num_samplers)
+
+    # NOTE: By setting the theoretical weights and biases, the biological
+    # ones automatically get calculated on-demand by accessing
+    # bm.weights_bio and bm.biases_bio
+
+    bm.saturating_synapses_enabled = True
+    bm.use_proper_tso = True
+
+    if bm.sim_name == "pyNN.neuron":
+        bm.saturating_synapses_enabled = False
+
+    bm.gather_spikes(duration=duration, dt=0.1, burn_in_time=500.)
+
+    # Now we just print out some information and plot the distributions.
+
+    log.info("Weights (theo):\n" + pf(bm.weights_theo))
+    log.info("Biases (theo):\n" + pf(bm.biases_theo))
+
+    log.info("Weights (bio):\n" + pf(bm.weights_bio))
+    log.info("Biases (bio):\n" + pf(bm.biases_bio))
+
+    log.info("Spikes: {}".format(pf(bm.ordered_spikes)))
+
+    log.info("Spike-data: {}".format(pf(bm.spike_data)))
+
+    bm.selected_sampler_idx = range(bm.num_samplers)
+
+    log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
+
+    log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+
+    log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
+
+    log.info("Joint prob (theo):\n"\
+            + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+
+    log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
+        bm.dist_marginal_theo, bm.dist_marginal_sim)))
+
+    log.info("DKL joint: {}".format(sbs.utils.dkl(
+            bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
+
+    bm.plot_dist_marginal(save=True)
+    bm.plot_dist_joint(save=True)
+
 
 
 if __name__ == "__main__":

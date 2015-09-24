@@ -40,7 +40,7 @@ def sources_create_connect(sim, samplers, duration, **kwargs):
     results = []
     for l_samplers in sampler_same_src_cfg:
         results.append(l_samplers[0].source_config.create_connect(
-            sim, l_samplers, duration, **kwargs))
+            sim, l_samplers, duration=duration, **kwargs))
 
     #  if len(results) == 1:
         #  return results[0]
@@ -53,6 +53,11 @@ class SourceConfiguration(Data):
     def create_connect(self, sim, samplers, **kwargs):
         """
             Shall create and connect the sources to the samplers.
+
+            samplers can be either a population of sampling neurons that all
+            receive a similarly configured stimulus (typically used during
+            calibration) or a list of actual sampler objects that all might have
+            different source configuration (but of the same type).
 
             Should return the tuple (sources, projections).
 
@@ -145,6 +150,11 @@ def get_population_from_samplers(sim, samplers):
         Please note that this function assumes
         that all samplers are adjacent to each other in
         the corresponding network population.
+
+        It returns either a Population/PopulationView if
+        all samplers were created at once or a list
+        of Populations/PopulationViews if the samplers
+        lie in different networks…
     """
     if isinstance(samplers, sim.Population):
         return samplers
@@ -238,10 +248,10 @@ class PoissonSourceConfiguration(SourceConfiguration):
         projections = {}
         # _ps = _per_sampler
         if not isinstance(samplers, sim.Population):
-            num_sources_per_sampler = np.array((len(s.calibration.source_config.rates)
+            num_sources_per_sampler = np.array((len(s.source_config.rates)
                 for s in samplers))
-            rates = np.hstack((s.calibration.source_config.rates for s in samplers))
-            weights = (s.calibration.source_config.weights for s in samplers)
+            rates = np.hstack((s.source_config.rates for s in samplers))
+            weights = (s.source_config.weights for s in samplers)
 
         else:
             # if we have one population all get the same sources
@@ -277,36 +287,55 @@ class PoissonSourceConfiguration(SourceConfiguration):
         conn_type = ["inh", "exc"]
 
         population = get_population_from_samplers(sim, samplers)
+        projections = {}
 
         cur_source = 0
-        for i, (sampler, weights) in enumerate(it.izip(samplers, weights)):
-            is_list = isinstance(population, list)
-            if is_list:
-                pop = population[i]
-            else:
-                pop = population
-
-            for j, weight in enumerate(weights):
-                connections[conn_type[weight > 0]].append(
-                        (idx_to_src_id[cur_source],
-                            # if we have a list each sampler is on its own
-                            i if is_list else 0, np.abs(weight)
-                            if pop.conductance_based else weight))
-                cur_source += 1
-
 
         if not isinstance(population, list):
-            population = [population]
-
-        projections = {}
-        for pop in population:
+            for i, (sampler, weights) in enumerate(it.izip(samplers, weights)):
+                for j, weight in enumerate(weights):
+                    connections[conn_type[weight > 0]].append(
+                            (idx_to_src_id[cur_source], i,
+                                np.abs(weight)
+                                if population.conductance_based else weight)
+                            )
+                    cur_source += 1
             for ct in conn_type:
                 projections[ct] = sim.Projection(
-                        sources, pop,
+                        sources, population,
                         receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
                         synapse_type=sim.StaticSynapse(),
                         connector=sim.FromListConnector(connections[ct],
                             column_names=["weight"]))
+
+        else:
+            for pop, weights in it.izip(population, weights):
+                connections = {"exc": [], "inh": []}
+
+                for j, weight in enumerate(weights):
+                    connections[conn_type[weight > 0]].append(
+                            (idx_to_src_id[cur_source], 0,
+                                np.abs(weight) if pop.conductance_based else weight)
+                            )
+                    cur_source += 1
+
+                for ct in conn_type:
+                    projections.setdefault(ct, []).append(sim.Projection(
+                            sources, pop,
+                            receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
+                            synapse_type=sim.StaticSynapse(),
+                            connector=sim.FromListConnector(connections[ct],
+                                column_names=["weight"])))
+
+
+        #  for pop in population:
+            #  for ct in conn_type:
+                #  projections[ct] = sim.Projection(
+                        #  sources, pop,
+                        #  receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
+                        #  synapse_type=sim.StaticSynapse(),
+                        #  connector=sim.FromListConnector(connections[ct],
+                            #  column_names=["weight"]))
 
         return sources, projections
 
@@ -319,7 +348,6 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         Spike times in ms.
     """
     data_attribute_types = {
-            "rates" : np.ndarray, # for theoretical calculations
             "weights" : np.ndarray,
             "spike_times" : np.ndarray,
             "spike_ids" : np.ndarray,
@@ -329,21 +357,111 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         """
             Shall create and connect the sources to the samplers.
         """
-        sources = self.create(sim)
-        self.connect(sim, sources, samplers)
+        # TODO: Implement improved NEST version
+        return self.create_connect_regular(sim, samplers)
+
+
+    def create_connect_regular(self, sim, samplers):
+        #  Creates the different SpikeSourceArrays.
+        population = get_population_from_samplers(sim, samplers)
+
+        # list of numpy array with the corresponding spike times
+        all_spike_times = [] 
+
+        # all connection tuples
+        conn_list = []
+
+        # helper function to get the index of corresponding spike times
+        def get_index(spike_times):
+            # Assumes spike times are sorted
+            for i, st in enumerate(all_spike_times):
+                if spike_times.size == st.size and np.all(st == spike_times):
+                    return i
+            else:
+                all_spike_times.append(spike_times)
+                return len(all_spike_times)-1
+
+        # note which source is connected to what samplers with what weight
+        if isinstance(samplers, sim.Population):
+            # all samplers receive same spikes
+            for i, w in enumerate(self.weights):
+                source_id = get_index(self.spike_times[self.spike_ids == i])
+                for j in xrange(len(samplers)):
+                    conn_list.append((source_id, j, w))
+        else:
+            # each sampelr might have different spike times
+            for j, s in enumerate(samplers):
+                sc = s.source_config
+                for i, w in enumerate(sc.weights):
+                    source_id = get_index(sc.spike_times[sc.spike_ids == i])
+                    conn_list.append((source_id, j, w))
+
+        sources = self.create_sources_regular(sim, all_spike_times)
+
+        projections = self.connect_sources_regular(sim, sources, population,
+                conn_list)
 
         return sources, projections
 
-    def create(self, sim):
-        num_sources = len(self.weights)
+    def create_sources_regular(self, sim, spike_times):
+        # create the unique sources
+        num_sources = len(spike_times)
         sources = sim.Population(num_sources, sim.SpikeSourceArray())
-        for i, src in enumerate(sources):
-            local_spike_times = self.spike_times[self.spike_ids == i]
-            src.spike_times = local_spike_times
-            src.rate = self.rates[i]
-
+        for src, st in it.izip(sources, spike_times):
+            src.spike_times = st
         log.info("Created {} fixed spike train sources.".format(num_sources)) 
-
         return sources
+
+    def connect_sources_regular(self, sim, sources, population, conn_list):
+        connection_types = ["inh", "exc"]
+        projections = {st: [] for st in connection_types}
+
+        if isinstance(population, sim.Population):
+            # one population for all samplers
+            if population.conductance_based:
+                trans = lambda w: np.abs(w)
+            else:
+                trans = lambda w: w
+
+            conn_lists = [
+                [(pre, post, trans(weight))
+                    for pre, post, weight in conn_list if weight <  0],
+                [(pre, post, trans(weight))
+                    for pre, post, weight in conn_list if weight >=  0],
+            ]
+            for ct, cl in it.izip(connection_types, conn_lists):
+                projections[ct].append(sim.Projection(
+                        sources, population,
+                        receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
+                        synapse_type=sim.StaticSynapse(),
+                        connector=sim.FromListConnector(cl,
+                            column_names=["weight"])))
+
+        else:
+            # each sampler has its own population
+            for j, pop in enumerate(population):
+                if pop.conductance_based:
+                    trans = lambda w: np.abs(w)
+                else:
+                    trans = lambda w: w
+
+                conn_lists = [
+                    [(pre, 0, trans(weight))
+                        for pre, post, weight in conn_list
+                        if weight <  0 and post == j],
+                    [(pre, 0, trans(weight))
+                        for pre, post, weight in conn_list
+                        if weight >=  0 and post == j],
+                ]
+                for ct, cl in it.izip(connection_types, conn_lists):
+                    projections[ct].append(sim.Projection(
+                            sources, pop,
+                            receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
+                            synapse_type=sim.StaticSynapse(),
+                            connector=sim.FromListConnector(cl,
+                                column_names=["weight"])))
+
+        return projections
+
 
 

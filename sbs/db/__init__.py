@@ -138,9 +138,15 @@ class Calibration(Data):
 
 
 class SamplerConfiguration(Data):
+    """
+        The source configuration is in order to be able to specify a different
+        source configuration from the one used during calibration.
+    """
+
     data_attribute_types = {
         "neuron_parameters" : NeuronParameters,
         "calibration" : Calibration,
+        "source_config" : SourceConfiguration,
     }
 
 

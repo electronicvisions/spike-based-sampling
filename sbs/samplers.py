@@ -43,6 +43,7 @@ class LIFsampler(object):
         if isinstance(sampler_config, db.SamplerConfiguration):
             self.calibration = sampler_config.calibration
             self.neuron_parameters = sampler_config.neuron_parameters
+            self.source_config = sampler_config.source_config
 
         elif isinstance(sampler_config, db.NeuronParameters):
             self.neuron_parameters = sampler_config
@@ -141,12 +142,15 @@ class LIFsampler(object):
         """
         return value
 
-    @property
-    def source_config(self):
+    @meta.DependsOn()
+    def source_config(self, value=None):
         """
             Can only be set by modifying the calibration.
         """
-        return self.calibration.source_config
+        if value is None:
+            return self.calibration.source_config
+        else:
+            return value
 
     @property
     def is_calibrated(self):
@@ -301,9 +305,9 @@ class LIFsampler(object):
                 "dt" : dt
             }
 
-    def get_all_source_parameters(self):
+    def get_calibration_source_parameters(self):
         """
-            Returns a tuple of `np.array`s with source configuration
+            Returns a tuple of `np.array`s with calibration source configuration
                 (rates_exc, rates_inh, weights_exc, weights_inh)
         """
         src_cfg = self.calibration.source_config
@@ -320,7 +324,7 @@ class LIFsampler(object):
     def get_vmem_dist_theo(self):
         dist = getattr(utils, "{}_distribution".format(self.pynn_model))
         # TODO:
-        args = self.get_all_source_parameters()
+        args = self.get_calibration_source_parameters()
         if self.calibration.fit is None or  not self.calibration.fit.is_valid():
             if not self.silent:
                 log.info("Computing vmem distribution ONLY from supplied neuron "
@@ -468,12 +472,8 @@ class LIFsampler(object):
         if create_pynn_sources == True:
             assert duration is not None, "Instructed to create sources "\
                     "without duration!"
-            self.calibration.source_config.create_connect(
+            self.source_config.create_connect(
                     sim, [self], duration=duration)
-            # source_config = self.calibration.source_config
-            # self.sources = bb.create_sources(sim, source_config, duration)
-            # self.source_projections = bb.connect_sources(sim, source_config,
-                    # self.sources, self.population)
 
         return self.population
 

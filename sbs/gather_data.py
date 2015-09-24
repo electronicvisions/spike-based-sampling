@@ -217,7 +217,7 @@ def gather_calibration_data(
     return samples_p_on
 
 
-# @comm.RunInSubprocess
+@RunInSubprocess
 def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     """
         Records a voltage trace of the free membrane potential of the given
@@ -241,17 +241,9 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
 
     population = sampler.create(total_duration)
 
-    # sources = bb.create_sources(sim, source_config, dp["duration"])
-
-    # population = sim.Population(1, getattr(sim, pynn_model)(**neuron_params))
     population.record("v")
     population.initialize(v=sampler.get_pynn_parameters()["v_rest"])
     population.set(v_thresh=adjusted_v_thresh)
-
-    # projections = bb.connect_sources(sim, source_config, sources, population)
-
-    # sources, projections = source_config.create_connect(sim, population,
-            # duration=dp["duration"])
 
     callbacks = get_callbacks(sim, {
             "duration" : dp["duration"],
@@ -278,7 +270,7 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-@RunInSubprocess
+#  @RunInSubprocess
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """

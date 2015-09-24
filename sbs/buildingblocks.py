@@ -14,6 +14,8 @@ from pprint import pformat as pf
 
 def create_sources(sim, source_config, duration):
     """
+        DEPRECATED!
+
         Create sources from a list of source specifications
     """
     sources = None
@@ -122,6 +124,8 @@ def connect_sources(sim, source_config, sources, target):
 def create_nest_optimized_sources(sim, samplers, population, duration,
         source_model=None, source_model_kwargs=None):
     """
+        DEPRECATED!
+
         Create the least number of poisson_generator type specific to python
         and connecte them to the samplers.
 

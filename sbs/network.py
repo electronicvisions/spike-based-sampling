@@ -330,7 +330,6 @@ class BoltzmannMachineBase(object):
 
         log.info("Creating samplers.")
         self.population = self.create_population(**kwargs)
-        self._set_network_in_samplers()
 
         log.info("Connecting samplers.")
         self.projections = self.create_connectivity(**kwargs)
@@ -338,7 +337,7 @@ class BoltzmannMachineBase(object):
         return self.population, self.projections
 
     def create_population(self, duration=None, _nest_optimization=True,
-            custom_source_config=None, **kwargs):
+            **kwargs):
 
         assert duration is not None, "Duration must be set!"
         exec "import {} as sim".format(self.sim_name) in globals(), locals()
@@ -364,12 +363,7 @@ class BoltzmannMachineBase(object):
             sampler.create(duration=duration, population=local_pop,
                     create_pynn_sources=False)
 
-
-        if custom_source_config is not None:
-            # create a list to be compatible to below
-            self._pynn_sources = [custom_source_config.create_connect(
-                    sim, population, duration=duration,
-                    nest_optimized=_nest_optimization)]
+        self._set_network_in_samplers()
 
         # check whether we have the same source configuration for everything
         # if all(s.calibration.source_config ==\
