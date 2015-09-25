@@ -570,7 +570,7 @@ class LIFsampler(object):
         autocorr = cutils.autocorr(self.free_vmem["trace"], max_step_diff)
 
         ax.plot(np.arange(1, max_step_diff+1)
-                * self.free_vmem_trace["dt"], autocorr)
+                * self.free_vmem["dt"], autocorr)
 
         ax.set_xlabel("$\Delta$ T [ms]")
         ax.set_ylabel("Correlation")
