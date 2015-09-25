@@ -1,0 +1,26 @@
+#%Module1.0#####################################################################
+##
+## modules modulefile
+##
+
+set modname [lindex [split [module-info name] "/"] 0]
+set version [lindex [split [module-info name] "/"] 1]
+
+proc ModulesHelp { } {
+	global version
+	puts stderr "\t${modname} ${version}"
+}
+
+set hostname [uname nodename]
+
+module-whatis "${modname} ${version}"
+
+conflict $modname
+set lucid [system lsb_release -c -s | egrep -q '(lucid|squeeze)']
+
+prereq numpy
+# prereq pyzmq
+prereq pynn
+
+append-path	PYTHONPATH	/wang/environment/software/wheezy/${modname}/${version}/lib/python2.7/site-packages
+
