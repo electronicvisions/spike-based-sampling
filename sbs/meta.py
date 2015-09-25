@@ -5,7 +5,7 @@ import numpy as np
 import pylab as p
 import h5py
 import functools as ft
-import peewee as pw
+#  import peewee as pw
 import logging
 import os.path as osp
 
@@ -92,52 +92,52 @@ def generate_getter(field):
     return getter
 
 
-class StorageFields(pw.BaseModel):
-    """
-        Meta class to enable storage fields for models.
+#  class StorageFields(pw.BaseModel):
+    #  """
+        #  Meta class to enable storage fields for models.
 
-        Storage fields are defined by `storage_fields` in the original model.
-        They can be set and got but not used in any SQL query as they are not
-        present in the dataset.
+        #  Storage fields are defined by `storage_fields` in the original model.
+        #  They can be set and got but not used in any SQL query as they are not
+        #  present in the dataset.
 
-        The model has to be saved to the database for storage fields to work.
+        #  The model has to be saved to the database for storage fields to work.
 
-        For each storage field, there will be `name`_sha1 char field added so
-        that there is an indication when storage contents change (e.g. this is
-        used to distinguish sources with different spike times).
-    """
-    def __new__(mcs, name, bases, dcts):
-        storage_fields = dcts.get("_storage_fields", tuple())
+        #  For each storage field, there will be `name`_sha1 char field added so
+        #  that there is an indication when storage contents change (e.g. this is
+        #  used to distinguish sources with different spike times).
+    #  """
+    #  def __new__(mcs, name, bases, dcts):
+        #  storage_fields = dcts.get("_storage_fields", tuple())
 
-        def get_storage_group(self, h5grp):
-            assert self.get_id() is not None, "Model was not saved in database!"
-            return ensure_group_exists(ensure_group_exists(h5grp,
-                self.__class__.__name__), str(self.get_id()))
+        #  def get_storage_group(self, h5grp):
+            #  assert self.get_id() is not None, "Model was not saved in database!"
+            #  return ensure_group_exists(ensure_group_exists(h5grp,
+                #  self.__class__.__name__), str(self.get_id()))
 
-        dcts["get_storage_group"] = get_storage_group
+        #  dcts["get_storage_group"] = get_storage_group
 
-        for field in storage_fields:
-            setter = generate_setter(field)
-            getter = generate_getter(field)
-            dcts[field] = property(getter, setter)
-            dcts[field + "_sha1"] = pw.CharField(null=True, max_length=40)
+        #  for field in storage_fields:
+            #  setter = generate_setter(field)
+            #  getter = generate_getter(field)
+            #  dcts[field] = property(getter, setter)
+            #  dcts[field + "_sha1"] = pw.CharField(null=True, max_length=40)
 
-        cls = super(StorageFields, mcs).__new__(mcs, name, bases, dcts)
+        #  cls = super(StorageFields, mcs).__new__(mcs, name, bases, dcts)
 
-        # we need to overwrite the delete_instance method
-        def delete_instance(self):
-            with DataStorage(read_only=False) as data_storage:
-                h5grp = self.get_storage_group(data_storage)
-                for sf in storage_fields:
-                    delete_dataset(h5grp, sf)
+        #  # we need to overwrite the delete_instance method
+        #  def delete_instance(self):
+            #  with DataStorage(read_only=False) as data_storage:
+                #  h5grp = self.get_storage_group(data_storage)
+                #  for sf in storage_fields:
+                    #  delete_dataset(h5grp, sf)
 
-                return super(cls, self).delete_instance()
+                #  return super(cls, self).delete_instance()
 
-        setattr(cls, "delete_instance", delete_instance)
-        return cls
+        #  setattr(cls, "delete_instance", delete_instance)
+        #  return cls
 
 
-_depdency_checked_token = "_depcheck_done_26bslash9"
+_dependency_checked_token = "_depcheck_done_26bslash9"
 
 class DependsOn(object):
     """
@@ -234,7 +234,7 @@ def HasDependencies(klass):
         Decorator that is needed for dependency relations to be maintained.
     """
     klass_vars = vars(klass)
-    if _depdency_checked_token in klass_vars:
+    if _dependency_checked_token in klass_vars:
         return klass
 
     found_dependencies = False
@@ -256,7 +256,7 @@ def HasDependencies(klass):
 
     if found_dependencies:
         setattr(klass, "wipe", wipe)
-        setattr(klass, _depdency_checked_token, True)
+        setattr(klass, _dependency_checked_token, True)
 
     # catch mixins (they can be modified in place)
     # note: only direct mixins are caught as long as each class in the hierachy
