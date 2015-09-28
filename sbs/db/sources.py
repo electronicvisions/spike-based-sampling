@@ -345,9 +345,13 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         Positive weights: excitatory
         Negative weights: inhibitory
 
+        Rates are only used to compute weight translations etc and are not
+        actually used when creating the spike sources.
+
         Spike times in ms.
     """
     data_attribute_types = {
+            "rates" : np.ndarray,
             "weights" : np.ndarray,
             "spike_times" : np.ndarray,
             "spike_ids" : np.ndarray,

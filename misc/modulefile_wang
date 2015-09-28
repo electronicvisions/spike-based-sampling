@@ -19,7 +19,6 @@ conflict $modname
 set lucid [system lsb_release -c -s | egrep -q '(lucid|squeeze)']
 
 prereq numpy
-# prereq pyzmq
 prereq pynn
 
 append-path	PYTHONPATH	/wang/environment/software/wheezy/${modname}/${version}/lib/python2.7/site-packages

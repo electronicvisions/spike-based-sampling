@@ -269,6 +269,7 @@ class LIFsampler(object):
             log.info("Calibration data gathered, performing fit.")
 
         self._calc_distribution_theo()
+
         # self._estimate_alpha()
 
         self.calibration.fit = db.Fit()
