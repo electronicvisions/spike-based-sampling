@@ -94,7 +94,7 @@ class LIFsampler(object):
             # if the bias is in bio units we need calibration to give the
             # theoretical equivalent
             assert(self.is_calibrated)
-            return self.bias_bio / self.calibration.fit.alpha
+            return self.bias_bio_to_theo(self.bias_bio)
         else:
             return value
 
@@ -119,7 +119,7 @@ class LIFsampler(object):
         return bias * self.calibration.fit.alpha
 
     def bias_bio_to_theo(self, bias):
-        return bias / self.calibration.alpha
+        return bias / self.calibration.fit.alpha
 
     def sync_bias_to_pynn(self):
         assert self.is_created
