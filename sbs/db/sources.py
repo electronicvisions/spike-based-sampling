@@ -26,19 +26,12 @@ def sources_create_connect(sim, samplers, duration, **kwargs):
 
         Returns a list of created sources.
     """
-    sampler_same_src_cfg = [
-            [samplers[0]]
-        ]
-
-    for s in samplers[1:]:
-        if isinstance(s.source_config,
-                sampler_same_src_cfg[-1][0].source_config.__class__):
-            sampler_same_src_cfg[-1].append(s)
-        else:
-            sampler_same_src_cfg.append([s])
+    sampler_same_src_cfg = it.groupby(
+        samplers, lambda s: s.source_config.__class__)
 
     results = []
-    for l_samplers in sampler_same_src_cfg:
+    for _, it_samplers in sampler_same_src_cfg:
+        l_samplers = list(it_samplers)
         results.append(l_samplers[0].source_config.create_connect(
             sim, l_samplers, duration=duration, **kwargs))
 
