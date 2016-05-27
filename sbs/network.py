@@ -688,9 +688,9 @@ class ThoroughBM(BoltzmannMachineBase):
 
         marginals = np.zeros((len(self.selected_sampler_idx),))
 
-        for i in self.selected_sampler_idx:
-            sampler = self.samplers[i]
-            spikes = self.spike_data["spiketrains"][i]
+        for i, idx in enumerate(self.selected_sampler_idx):
+            sampler = self.samplers[idx]
+            spikes = self.spike_data["spiketrains"][idx]
             marginals[i] = len(spikes) * sampler.neuron_parameters.tau_refrac
 
         marginals /= self.spike_data["duration"]
