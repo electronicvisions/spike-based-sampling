@@ -4,16 +4,19 @@
 import numpy as np
 import itertools as it
 import collections as c
+import uuid
 
 from ..logcfg import log
 from .core import Data
 from ..conversion import weight_pynn_to_nest
 from .neuron_parameters import NeuronParameters
+from pprint import pformat as pf
 
 __all__ = [
         "sources_create_connect",
         "SourceConfiguration",
         "PoissonSourceConfiguration",
+        "MultiPoissonVarRateSourceConfiguration",
         "FixedSpikeTrainConfiguration",
         "NoiseNetworkSourceConfiguration",
         "PoissonPoolSourceConfiguration",
@@ -395,6 +398,226 @@ class PoissonSourceConfiguration(SourceConfiguration):
             "weights_exc": self.weights[is_exc],
             "weights_inh": self.weights[is_inh],
         }
+
+
+class MultiPoissonVarRateSourceConfiguration(SourceConfiguration):
+    """
+        Sets up the configuration of a network's Poisson noise input with time
+        varying rates.
+
+        Configuration is done via two attributes:
+
+        weight_per_source:
+            A numpy array of shape (m,) representing the unchangable weights
+            with which each the m virtual sources is firing.
+
+        rate_changes_per_source:
+            A list of length m containing numpy arrays of shape (_, 2). The
+            j-th entry represents the rate changes of the j-th virtual source
+            with weight weight_per_source[j].
+            Each entry has the individual shape (n_j, 2), where n_j is the
+            number of rate changes for the j-th virtual source.
+            For the j-th source, the i-th change occurs at time
+            rate_changes_per_source[j][i, 0] and changes the rate to
+            rate_changes_per_source[j][i, 1].
+
+        Example:
+        ```
+            rate_changes = np.array([[0., 1000.],
+                                     [2000., 100.]])
+
+            weights = [0.001, -0.001]
+
+            sampler_config.source_config = \
+                sbs.db.MultiPoissonVarRateSourceConfiguration(
+                    weight_per_source=poisson_weights,
+                    rate_changes_per_source=[rate_changes]*len(weights))
+        ```
+
+        MultiPoissonVarRateSourceConfiguration(src_courses=src_courses)
+        """
+
+    data_attribute_types = {
+           # A numpy array of shape (m,) representing the unchangable weights
+           # with which each the m virtual sources is firing.
+           "weight_per_source": np.ndarray,
+
+           # A list of length m containing numpy arrays of shape (2, _). The
+           # j-th entry represents the rate changes of the j-th virtual source
+           # with weight weight_per_source[j].
+           # Each entry has the individual shape (n_j, 2), where n_j is the
+           # number of rate changes for the j-th virtual source.
+           # For the j-th source, the i-th change occurs at time
+           # rate_changes_per_source[j][i, 0] and changes the rate to
+           # rate_changes_per_source[j][i, 1].
+           "rate_changes_per_source": list,
+        }
+
+    def create_connect(self, sim, samplers, duration, **kwargs):
+        """
+            Shall create and connect the sources to the samplers.
+        """
+        # Three cases have to be distinguished:
+        # 1) connect to regular population (calibration etc)
+        # 2) connect to list of samplers having the same rates
+        # 3) connect to list of samplers having different rates
+
+        if hasattr(sim, "nest"):
+            sources, projections = self.create_nest(
+                    sim, samplers, duration)
+
+        else:
+            raise NotImplementedError("Only backend nest supported.")
+        return sources, projections
+
+    def create_nest(self, sim, samplers, duration):
+        log.info("Creating multi poisson sources directly in NEST.")
+
+        source_model = "multi_poisson_generator"
+
+        if not isinstance(samplers, sim.common.BasePopulation):
+            log.debug("Generating for list of samplers.")
+            all_weights = np.r_[[s.source_config.weight_per_source
+                                 for s in samplers]]
+            all_rate_changes = [
+                    rc for s in samplers
+                    for rc in s.source_config.rate_changes_per_source]
+
+            for s in samplers:
+                self._assert_correct_config(s.source_config)
+        else:
+            log.debug("Generating for single PyNN.Population")
+            all_weights = [self.weight_per_source
+                           for i in xrange(len(samplers))]
+
+            all_rate_changes = [self.rates_changes_per_source
+                                for i in xrange(len(samplers))]
+
+            self._assert_correct_config(self)
+
+        num_virtual_sources_per_sampler = map(len, all_weights)
+        num_virtual_sources = sum(num_virtual_sources_per_sampler)
+
+        import nest
+
+        gid_parrots = list(nest.Create("parrot_neuron", num_virtual_sources))
+
+        times, rates = np.concatenate(all_rate_changes, axis=0).T
+        targets = np.concatenate(
+            [[i] * len(rc) for i, rc in enumerate(all_rate_changes)], axis=0)
+
+        status_dict = {
+                    "rates": rates,
+                    "times": times,
+                    "targets": targets,
+                    "target_gids": np.array(gid_parrots),
+                    "use_model": True,
+                    }
+
+        list(map(log.debug, pf(status_dict).split("\n")))
+
+        # generate a random model namej
+        model_name = "mpg-" + str(uuid.uuid4())
+
+        nest.CopyModel(source_model, model_name)
+        nest.SetDefaults(model_name, status_dict)
+        gid_generator = list(nest.Create(model_name, 1))
+
+        nest.Connect(gid_generator, gid_parrots, "all_to_all")
+
+        list_pop = get_population_from_samplers(sim, samplers)
+        if isinstance(list_pop, sim.common.BasePopulation):
+            list_pop = [list_pop]
+        gid_samplers = np.hstack([p.all_cells.tolist() for p in list_pop])
+
+        # we want a mapping from each samplers sources into a large flattened
+        # array
+        offset_per_sampler = np.cumsum(num_virtual_sources_per_sampler)
+
+        def idx_parrot_to_sampler(idx):
+            """
+                Parrot id to sampler id.
+            """
+            return np.where(idx < offset_per_sampler)[0][0]
+
+        parrot_to_sampler = np.array(
+                [idx_parrot_to_sampler(i_parrot)
+                 for i_parrot in xrange(len(gid_parrots))])
+        parrot_to_sampler_gid = list(gid_samplers[parrot_to_sampler])
+
+        nest.Connect(gid_parrots, parrot_to_sampler_gid, "one_to_one",
+                     {"weight": weight_pynn_to_nest(
+                         np.concatenate(all_weights, axis=0))})
+
+        projections = {
+                "generator_to_parrot": nest.GetConnections(gid_generator),
+                "parrot_to_sampler": nest.GetConnections(gid_parrots)
+                }
+
+        sources = {
+            "generators": np.array(gid_generator),
+            "parrots": np.array(gid_parrots),
+            }
+        return sources, projections
+
+    @classmethod
+    def _consolidate_sources(weights_per_source, rate_changes_per_source):
+        """Reduce number of source configuration by merging duplicates.
+
+        Note: Does not return copies of the rate_change arrays.
+
+        Returns a triple of (
+            weight_per_consolidated_source,
+            rate_changes_per_consolidated_source,
+            idx_source_to_consolidated)
+
+        such that (weight_per_source[i], rates_changes_per_source[i]) are found
+        in
+        (weight_per_consolidated_source[idx_source_to_consolidated[i]]),
+         rate_changes_per_consolidated_source[idx_source_to_consolidated[i]])
+        """
+        # barebones implementation
+        weight_per_consolidated_source = []
+        rate_changes_per_consolidated_source = []
+        idx_source_to_consolidated = []
+
+        for w, rc in it.izip(weights_per_source, rate_changes_per_source):
+            for i, (w_cons, rc_cons) in enumerate(
+                    it.izip(weight_per_consolidated_source,
+                            rate_changes_per_consolidated_source)):
+                if w != w_cons:
+                    continue
+                if np.any(rc != rc_cons):
+                    continue
+                # we have found a duplicate entry
+                idx_source_to_consolidated.append(i)
+            else:
+                # we found a unique entry -> add it to the return values
+                idx_source_to_consolidated.append(
+                        len(weight_per_consolidated_source))
+                weight_per_consolidated_source.append(w)
+                rate_changes_per_consolidated_source.append(rc)
+
+        return (
+            np.array(weight_per_consolidated_source),
+            rate_changes_per_consolidated_source,
+            np.array(idx_source_to_consolidated),
+            )
+
+    @staticmethod
+    def _assert_correct_config(source_config):
+        assert isinstance(source_config.weight_per_source,
+                          np.ndarray)
+        assert isinstance(source_config.rate_changes_per_source,
+                          list)
+
+        assert (len(source_config.weight_per_source) ==
+                len(source_config.rate_changes_per_source))
+
+        for rc in source_config.rate_changes_per_source:
+            assert isinstance(rc, np.ndarray)
+            assert len(rc.shape) == 2
+            assert rc.shape[-1] == 2
 
 
 class FixedSpikeTrainConfiguration(SourceConfiguration):

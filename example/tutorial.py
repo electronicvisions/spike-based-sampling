@@ -416,6 +416,81 @@ def sample_network_fixed_spikes():
     bm.plot_dist_joint(save=True)
 
 
+def sample_network_var_poisson_rate():
+    """
+        How to setup and evaluate a Boltzmann machine. Please note that in
+        order to instantiate BMs all needed neuron parameters need to be in the
+        database and calibrated. Also not that weight changes are not
+        supported
+
+    """
+    np.random.seed(42)
+
+    filename = "tutorial-network"
+
+    # Load calibration data in order to create network.
+    sampler_config = sbs.db.SamplerConfiguration.load(
+            "tutorial_calibration.json")
+
+    # We set the variation behaviour of the rates via the source
+    # configuration of the sampler configuration. If we do not set it
+    # specifically, the source configuration from the calibration file would
+    # be used. Since a calibration on an array of different rates is not
+    # sensible, we set it here. We specify the weights, rates and times of each
+    # poisson input of a sampler. Positive (negative) weights are interpreted
+    # as excitatory (inhibitory).
+
+    # Define the rate changes of an excitatory Poisson source.
+    poisson_source_1 = np.array([
+        # [ <time>, <rate>, <weight> ],
+        [0., 1000., 0.001],
+        [2000., 100., 0.001]])
+
+    # A second Poisson source has the same rate changes but is inhibitory.
+    poisson_source_2 = poisson_source_1.copy()
+    poisson_source_2[:, -1] *= -1
+
+    # The individual Poisson source course arrays are bundled into one matrix
+    # src_courses and provided as keyword argument to the class.
+    src_courses = np.array([poisson_source_1, poisson_source_2])
+    sampler_config.source_config = \
+        sbs.db.MultiPoissonVarRateSourceConfiguration(src_courses=src_courses)
+
+    # Choose the number of samplers in the network.
+    bm = sbs.network.ThoroughBM(num_samplers=5, sim_name=sim_name,
+                                sampler_config=sampler_config)
+
+    # Choose weights (here random) and symmetrize them.
+    weights = np.random.randn(bm.num_samplers, bm.num_samplers)
+    weights = (weights + weights.T) / 2.
+    bm.weights_theo = weights
+
+    # Choose biases (here random).
+    bm.biases_theo = np.random.randn(bm.num_samplers)
+
+    # Sample the network and save it.
+    bm.gather_spikes(duration=1e5,  burn_in_time=500., dt=0.1,
+                     sim_setup_kwargs={"spike_precision": "on_grid"})
+    bm.save(filename)
+
+    # You can load back the saved network via
+    # bm = sbs.network.ThoroughBM.load(filename)
+
+    # Print out some information.
+
+    log.info("Weights (theo):\n" + pf(bm.weights_theo))
+    log.info("Biases (theo):\n" + pf(bm.biases_theo))
+
+    log.info("Weights (bio):\n" + pf(bm.weights_bio))
+    log.info("Biases (bio):\n" + pf(bm.biases_bio))
+
+    log.info("Spikes: {}".format(pf(bm.ordered_spikes)))
+
+    log.info("Spike-data: {}".format(pf(bm.spike_data)))
+
+    bm.selected_sampler_idx = range(bm.num_samplers)
+
+
 if __name__ == "__main__":
     from inspect import isfunction, getargspec
     local_globals = globals().keys()
