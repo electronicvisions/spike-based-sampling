@@ -13,6 +13,7 @@ import cPickle as pkl
 import os
 import atexit
 import functools as ft
+import tempfile
 
 from .logcfg import log
 from . import utils
@@ -96,8 +97,6 @@ class RunInSubprocess(object):
         try:
             socket, address, port = self._setup_socket_host()
             script_filename = self._setup_script_file(address, port)
-            atexit.register(ft.partial(_delete_script_file,
-                script_filename, warn=False))
 
             socket.listen(1)
 
@@ -221,14 +220,10 @@ class RunInSubprocess(object):
             return osp.splitext(module_path)[0]
 
     def _setup_script_file(self, address, port):
-        # NOTE: Currently we are using shared memory because the process is
-        # always started on the same machine, might change in the future.
-
         log.debug("Setting up script file.")
-        filename = "/dev/shm/{}_{}.py".format(self._func_module.split(".")[0],
-                utils.get_random_string())
-        log.debug("Script filename {}.".format(filename))
-        script = open(filename, "w")
+        script = tempfile.NamedTemporaryFile(prefix="sbs_",
+                delete=False)
+        log.debug("Script filename {}.".format(script.name))
 
         # write preamble
         script.write("#!{}\n".format(sys.executable))
@@ -245,17 +240,31 @@ class RunInSubprocess(object):
 
         script.close()
 
-        return filename
+        # delete temporary script file when the script exits
+        atexit.register(_delete_script_file, script.name,
+                warn=False, cleanup=True)
+
+        return script.name
 
 
 # utility functions
 
-def _delete_script_file(script_filename, warn=True):
+def _delete_script_file(script_filename, warn=True, cleanup=False):
     try:
         os.remove(script_filename)
         log.debug("Deleted script file.")
-    except OSError:
-        if warn:
-            log.warn(
-                "Could not delete temporary script file for subprocess.")
+    except OSError as e:
+        if e.errno == 2:
+            if warn and not cleanup:
+                # Please note that each file is essentially deleted twice under
+                # normal conditions (once in _host and once at the atexit
+                # deletion routine). This is done to make sure that the file
+                # gets deleted even if there is an error, but also doesn't
+                # linger around if several subprocess calls are made over the
+                # course of a single run.
+                log.warn( "Could not delete temporary script file for "
+                        "subprocess: " + script_filename)
+        else:
+            raise e
+
 

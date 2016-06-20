@@ -36,7 +36,7 @@ class BoltzmannMachineBase(object):
             Sets up a Boltzmann network.
 
             sampler_config:
-                Either one or a lilst of size `num_samplers` of
+                Either one or a list of size `num_samplers` of
                 SamplerConfiguration objects with which the samplers are
                 initialized.
 

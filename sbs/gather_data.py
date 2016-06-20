@@ -25,7 +25,6 @@ from . import logcfg
 from .logcfg import log
 from . import buildingblocks as bb
 from . import utils
-from .comm import RunInSubprocess
 from . import db
 
 _subprocess_silent = False
@@ -50,7 +49,7 @@ class SendLogLevelMixin(object):
         return super(SendLogLevelMixin, self)._recv_arguments(socket)
 
 
-class RunInSubprocessWithDatabase(SendLogLevelMixin, RunInSubprocess):
+class RunInSubprocessWithDatabase(SendLogLevelMixin, comm.RunInSubprocess):
     """
         Send current database information along to the subprocess.
 
@@ -217,7 +216,7 @@ def gather_calibration_data(
     return samples_p_on
 
 
-@RunInSubprocess
+@comm.RunInSubprocess
 def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     """
         Records a voltage trace of the free membrane potential of the given
@@ -270,7 +269,7 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-#  @RunInSubprocess
+@comm.RunInSubprocess
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """
