@@ -82,7 +82,7 @@ def calibration():
             duration=1e5, num_samples=150, burn_in_time=500., dt=0.01,
             source_config=source_config,
             sim_name=sim_name,
-            sim_setup_kwargs={"spike_precision": "on_grid", "min_delay" : 0.01})
+            sim_setup_kwargs={"spike_precision": "on_grid"})
     # Do not forget to specify the source configuration!
 
     # here we could give further kwargs for the pre-calibration phase when the
@@ -125,7 +125,7 @@ def calibration_curr():
             duration=1e5, num_samples=150, burn_in_time=500., dt=0.01,
             source_config=source_config,
             sim_name=sim_name,
-            sim_setup_kwargs={"spike_precision": "on_grid", "min_delay": 0.01})
+            sim_setup_kwargs={"spike_precision": "on_grid"})
     # Do not forget to specify the source configuration!
 
     # here we could give further kwargs for the pre-calibration phase when the

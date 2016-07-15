@@ -278,10 +278,9 @@ class BoltzmannMachineBase(object):
             If this returns False, expect `self.population` to be a list of
             size-1 populations unless specified differently during creation.
         """
-        return all(
-            ((sampler.pynn_model == self.samplers[0].pynn_model)\
-
-                for sampler in self.samplers))
+        return all( ((type(sampler.neuron_parameters) is\
+                type(self.samplers[0].neuron_parameters))\
+                for sampler in self.samplers) )
 
     @property
     def is_created(self):
@@ -342,6 +341,8 @@ class BoltzmannMachineBase(object):
         assert duration is not None, "Duration must be set!"
         exec "import {} as sim".format(self.sim_name) in globals(), locals()
 
+        self.sim = sim
+
         assert self.all_samplers_same_model(),\
                 "The samplers have different pynn_models."
 
@@ -351,9 +352,14 @@ class BoltzmannMachineBase(object):
 
         log.info("Setting up population for duration: {}ms".format(duration))
 
-        log.info("PyNN-model: {}".format(self.samplers[0].pynn_model))
+        if not self.samplers[0].is_using_nest_model(sim):
+            log.info("PyNN-model: {}".format(self.samplers[0].pynn_model))
+        else:
+            log.info("NEST specific model: {}".format(
+                self.samplers[0].neuron_parameters.nest_model))
+
         population = sim.Population(self.num_samplers,
-                getattr(sim, self.samplers[0].pynn_model)())
+                self.samplers[0].get_pynn_model_object(sim)())
 
         for i, sampler in enumerate(self.samplers):
             local_pop = population[i:i+1]
@@ -468,10 +474,9 @@ class ThoroughBM(BoltzmannMachineBase):
                 column_names.append("tau_rec")
                 tau_rec = []
                 for sampler in self.samplers:
-                    pynn_params = sampler.get_pynn_parameters()
                     tau_rec.append({
-                            "exc" : pynn_params["tau_syn_E"],
-                            "inh" : pynn_params["tau_syn_I"],
+                            "exc" : sampler.neuron_parameters.tau_syn_E,
+                            "inh" : sampler.neuron_parameters.tau_syn_I,
                         })
             else:
                 log.info("TSO: tau_rec overwritten.")
@@ -527,9 +532,26 @@ class ThoroughBM(BoltzmannMachineBase):
                             **tso_params)
                 else:
                     log.info("Using 'tsodyks2_synapse' native synapse model.")
-                    synapse_type = sim.native_synapse_type("tsodyks2_synapse")(
-                            **self.tso_params)
+                    log.warn(
+                    "This is a stupid hack and needs to be fixed in pyNN.nest")
 
+                    # For reasons that are beyond me, PyNN.nest thinks it is a
+                    # good idea to inject a 'tau_psc' parameter in all
+                    # connections with 'tsodyks' in their name.
+                    # Hence we need to rename the tsodyks2 synapse to something
+                    # else.
+                    #
+                    # I am at a loss for words..
+                    import nest
+                    if "avoid_pynn_trying_to_be_smart" not in nest.Models():
+                        sim.nest.CopyModel("tsodyks2_synapse_lbl",
+                            "avoid_pynn_trying_to_be_smart_lbl")
+                        sim.nest.CopyModel("tsodyks2_synapse",
+                            "avoid_pynn_trying_to_be_smart")
+
+                    synapse_type = sim.native_synapse_type(
+                        "avoid_pynn_trying_to_be_smart")(
+                        **self.tso_params)
 
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)

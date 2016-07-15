@@ -43,6 +43,13 @@ def sources_create_connect(sim, samplers, duration, **kwargs):
 
 class SourceConfiguration(Data):
 
+    def get_distribution_parameters(self):
+        """
+            Return paramters needed for calculating the theoretical membrane
+            distribution.
+        """
+        raise NotImplementedError
+
     def create_connect(self, sim, samplers, **kwargs):
         """
             Shall create and connect the sources to the samplers.
@@ -161,6 +168,7 @@ def get_population_from_samplers(sim, samplers):
     else:
         return samplers[0].network["population"][
                 samplers[0].network["index"]:samplers[-1].network["index"]]
+
 
 
 class PoissonSourceConfiguration(SourceConfiguration):
@@ -334,6 +342,21 @@ class PoissonSourceConfiguration(SourceConfiguration):
 
         return sources, projections
 
+    def get_distribution_parameters(self):
+        """
+            Return paramters needed for calculating the theoretical membrane
+            distribution.
+        """
+        is_exc = self.weights > 0.
+        is_inh = np.logical_not(is_exc)
+
+        return {
+            "rates_exc" : self.rates[is_exc],
+            "rates_inh" : self.rates[is_inh],
+            "weights_exc" : self.weights[is_exc],
+            "weights_inh" : self.weights[is_inh],
+        }
+
 
 class FixedSpikeTrainConfiguration(SourceConfiguration):
     """
@@ -462,5 +485,19 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
 
         return projections
 
+    def get_distribution_parameters(self):
+        """
+            Return paramters needed for calculating the theoretical membrane
+            distribution.
+        """
+        is_exc = self.weights > 0.
+        is_inh = np.logical_not(is_exc)
+
+        return {
+            "rates_exc" : self.rates[is_exc],
+            "rates_inh" : self.rates[is_inh],
+            "weights_exc" : self.weights[is_exc],
+            "weights_inh" : self.weights[is_inh],
+        }
 
 

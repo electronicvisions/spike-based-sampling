@@ -20,12 +20,8 @@ class LIFsampler(object):
     supported_pynn_neuron_models = [
             "IF_curr_exp",
             "IF_cond_exp",
-            # "IF_cond_exp_cd",
-            # "IF_curr_exp_cd",
             "IF_curr_alpha",
             "IF_cond_alpha",
-            # "IF_cond_alpha_cd",
-            # "IF_curr_alpha_cd",
         ]
 
     def __init__(self, sampler_config, sim_name="pyNN.nest", silent=False):
@@ -175,9 +171,10 @@ class LIFsampler(object):
             not values yet with which to update.
         """
         assert(self.is_calibrated)
-        params = self.neuron_parameters.get_pynn_parameters()
+        adj_params = {}
         if adjust_v_rest:
-            params["v_rest"] = self.get_v_rest_from_bias()
+            adj_params["v_rest"] = self.get_v_rest_from_bias()
+        params = self.neuron_parameters.get_pynn_parameters(adj_params)
         return params
 
     def get_parameters_id(self):
@@ -200,6 +197,19 @@ class LIFsampler(object):
     @property
     def is_created(self):
         return self.population is not None
+
+    def is_using_nest_model(self, sim=None):
+        if sim is None:
+            sim = self.sim
+        if isinstance(self.neuron_parameters, db.NativeNestMixin):
+            if not hasattr(sim, "nest"):
+                raise RuntimeError("Please use native Nest models with the "
+                                   "PyNN.Nest backend!")
+            else:
+                return True
+        else:
+            return False
+
 
     def forget_calibration(self):
         """
@@ -308,39 +318,36 @@ class LIFsampler(object):
 
     def get_calibration_source_parameters(self):
         """
-            Returns a tuple of `np.array`s with calibration source configuration
-                (rates_exc, rates_inh, weights_exc, weights_inh)
+            Returns a dictionary of `np.array`s with calibration source configuration
+                rates_exc, rates_inh, weights_exc, weights_inh
         """
-        src_cfg = self.calibration.source_config
-        is_exc = src_cfg.weights > 0.
-        is_inh = np.logical_not(is_exc)
-
-        rates_exc = src_cfg.rates[is_exc]
-        rates_inh = src_cfg.rates[is_inh]
-        weights_exc = src_cfg.weights[is_exc]
-        weights_inh = src_cfg.weights[is_inh]
-
-        return rates_exc, rates_inh, weights_exc, weights_inh
+        return self.calibration.source_config.get_distribution_parameters()
 
     def get_vmem_dist_theo(self):
-        dist = getattr(utils, "{}_distribution".format(self.pynn_model))
-        # TODO:
-        args = self.get_calibration_source_parameters()
+        src_params = self.get_calibration_source_parameters()
         if self.calibration.fit is None or  not self.calibration.fit.is_valid():
             if not self.silent:
                 log.info("Computing vmem distribution ONLY from supplied neuron "
                      "parameters!")
-            kwargs = self.neuron_parameters.get_pynn_parameters()
+            adj_params = {}
         else:
             if not self.silent:
                 log.info("Computing vmem distribution with bias set to {}.".format(
                 self.bias_theo))
-            kwargs = self.get_pynn_parameters()
+            adj_params = self.get_adjusted_parameters()
 
-        # g_l is not a pynn parameter
-        kwargs["g_l"] = self.neuron_parameters.g_l
+        return self.neuron_parameters.get_vmem_distribution_theo(
+                source_parameters=src_params,
+                adjusted_parameters=adj_params,
+            )
 
-        return dist(*args, **kwargs)
+    def get_adjusted_parameters(self):
+        return { "v_rest" : self.get_v_rest_from_bias() }
+
+    def get_pynn_model_object(self, sim=None):
+        if sim is None:
+            sim = self.sim
+        return self.neuron_parameters.get_pynn_model_object(sim)
 
     # this is just kept for now to make sure the other factor is correct --obreitwi, 14-02-14 20:45:13
     # def factor_weights_bio_to_theo(self):
@@ -442,33 +449,43 @@ class LIFsampler(object):
     # PYNN methods #
     ##################
 
-    def create(self, duration=None, population=None, create_pynn_sources=True):
+    def create(self, duration=None, population=None, create_pynn_sources=True,
+            num_neurons=1, ignore_calibration=False):
         """
             Actually configures the supplied pyNN-object `popluation`
             (Population, PopulationView etc.) to have the loaded parameters and
             calibration.
 
-            If no `pynn_object` is supplied a Population of size 1 will be
-            created.
+            If no `pynn_object` is supplied a Population of size `num_neurons`
+            will be created.
 
             Usually, the same source-configuration that was present during
             calibration would be created and used, this can be disabled via
             `create_pynn_sources`.
+
+            `allow_uncalibrated` can be used to just create sampling neurons.
         """
-        assert(self.is_calibrated)
+
+        if not ignore_calibration:
+            assert(self.is_calibrated)
 
         exec("import {} as sim".format(self.sim_name))
         self.sim = sim
 
         self.population = population
         if self.population is None:
-            self.population = sim.Population(1,
-                    getattr(self.sim, self.pynn_model)())
+            self.population = sim.Population(num_neurons,
+                    self.get_pynn_model_object()())
 
         # get all parameters needed for instance
-        params = self.get_pynn_parameters()
+        params = self.get_pynn_parameters(adjust_v_rest=not ignore_calibration)
 
         self.population.set(**params)
+
+        if self.is_using_nest_model():
+            import nest
+            nest_params = self.neuron_parameters.get_nest_parameters()
+            nest.SetStatus(self.population.all_cells.tolist(), nest_params)
 
         if create_pynn_sources == True:
             assert duration is not None, "Instructed to create sources "\

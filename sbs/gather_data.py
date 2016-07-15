@@ -26,6 +26,7 @@ from .logcfg import log
 from . import buildingblocks as bb
 from . import utils
 from . import db
+from .samplers import LIFsampler
 
 _subprocess_silent = False
 
@@ -139,8 +140,13 @@ def gather_calibration_data(
     """
     log.info("Calibration started.")
     log.info("Preparing network.")
+
+
     calibration = sampler_config.calibration
     neuron_params = sampler_config.neuron_parameters
+
+    sampler = LIFsampler(sampler_config, sim_name=calibration.sim_name,
+            silent=True)
 
     if calibration.sim_setup_kwargs is None:
         sim_setup_kwargs = {}
@@ -168,22 +174,25 @@ def gather_calibration_data(
     if log.getEffectiveLevel() <= logging.DEBUG:
         log.debug("Sampler params: {}".format(pf(neuron_params)))
 
-    samplers = sim.Population(len(samples_v_rest),
-            getattr(sim, neuron_params.pynn_model)(
-                **neuron_params.get_pynn_parameters()))
-    samplers.record("spikes")
-    samplers.initialize(v=samples_v_rest)
-    samplers.set(v_rest=samples_v_rest)
+    pop = sampler.create(num_neurons=len(samples_v_rest),
+            ignore_calibration=True, duration=total_duration)
+    pop.record("spikes")
+    pop.initialize(v=samples_v_rest)
+
+    if isinstance(neuron_params, db.NativeNestMixin):
+        pop.set(E_L=samples_v_rest)
+    else:
+        pop.set(v_rest=samples_v_rest)
 
     if log.getEffectiveLevel() <= logging.DEBUG:
-        for i, s in enumerate(samplers):
+        for i, s in enumerate(pop):
             log.debug("v_rest of neuron #{}: {} mV".format(i, s.v_rest))
 
     # connect the two
     # projections = bb.connect_sources(sim, calibration.source_config, sources,
             # samplers)
-    sources, projection = calibration.source_config.create_connect(sim,
-            samplers, duration=total_duration)
+    #  sources, projection = calibration.source_config.create_connect(sim,
+            #  pop, duration=total_duration)
 
     callbacks = get_callbacks(sim, {
             "duration" : calibration.duration,
@@ -200,7 +209,7 @@ def gather_calibration_data(
     sim.run(duration, callbacks=callbacks)
 
     log.info("Reading spikes.")
-    spiketrains = samplers.get_data("spikes").segments[0].spiketrains
+    spiketrains = pop.get_data("spikes").segments[0].spiketrains
     if log.getEffectiveLevel() <= logging.DEBUG:
         for i, st in enumerate(spiketrains):
             log.debug("{}: {}".format(i, pf(st)))
@@ -269,7 +278,7 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-@comm.RunInSubprocess
+#  @comm.RunInSubprocess
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """

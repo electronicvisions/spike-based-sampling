@@ -6,6 +6,24 @@ import json
 
 from ..logcfg import log
 
+__all__ = [
+        "MetaData",
+        "Data",
+    ]
+
+
+def join_data_attribute_types(bases, dct):
+    joined = {}
+
+    for d in ( b.__dict__.get("data_attribute_types", {})
+            for b in bases):
+        joined.update(d)
+
+    joined.update(dct.get("data_attribute_types", {}))
+
+    return joined
+
+
 class MetaData(type):
     """
         Meta class to store all defined classes:
@@ -13,7 +31,10 @@ class MetaData(type):
     registry = {}
 
     def __new__(cls, name, bases, dct):
+        dct["data_attribute_types"] = join_data_attribute_types(bases, dct)
+
         klass = super(MetaData, cls).__new__(cls, name, bases, dct)
+
         cls.registry[name] = klass
         return klass
 
@@ -42,6 +63,24 @@ class Data(object):
         del datadict["_type"]
 
         return cls(**datadict)
+
+    @classmethod
+    def convert(cls, convert_from):
+        """
+            Convert one Data-like object to another.
+
+            All attributes not present in the target type will be discarded.
+        """
+        assert isinstance(convert_from, Data)
+
+        if not issubclass(cls, convert_from.__class__):
+            log.warn("Converting {} to non-subclass {}.".format(
+                convert_from.__class__.__name__, cls.__name__))
+
+        attributes = {k: v for k,v in convert_from.to_dict().iteritems()
+                if k in cls.data_attribute_types}
+
+        return cls(**attributes)
 
     def __init__(self, **attributes):
         self.from_dict(attributes)

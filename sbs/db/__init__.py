@@ -11,95 +11,12 @@ import collections as c
 from .core import Data
 from .sources import *
 from ..logcfg import log
+from .neuron_parameters import *
 
 
 def setup(*args, **kwargs):
     log.error("The database was discontinued and is without use. Please update "
             "your script accordingly!")
-
-
-class NeuronParameters(Data):
-    data_attribute_types = {
-        "pynn_model" : str,
-    }
-
-    @property
-    def g_l(self):
-        "Leak conductance in µS"
-        return self.cm / self.tau_m
-
-    def get_pynn_parameters(self):
-        dikt = self.get_dict()
-        del dikt["pynn_model"]
-        return dikt
-
-
-class NeuronParametersConductanceExponential(NeuronParameters):
-    pynn_model = "IF_cond_exp"
-
-    data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "e_rev_E"    : float, # mV  Reversal potential for exc inpt
-        "e_rev_I"    : float, # mV  Reversal potential for inh inpt
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
-    }.items())
-
-
-class NeuronParametersConductanceAlpha(NeuronParameters):
-    pynn_model = "IF_cond_alpha"
-
-    data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "e_rev_E"    : float, # mV  Reversal potential for exc inpt
-        "e_rev_I"    : float, # mV  Reversal potential for inh inpt
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
-    }.items())
-
-
-class NeuronParametersCurrentExponential(NeuronParameters):
-    pynn_model = "IF_curr_exp"
-
-    data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
-    }.items())
-
-
-class NeuronParametersCurrentAlpha(NeuronParameters):
-    pynn_model = "IF_curr_alpha"
-
-    data_attribute_types = dict(NeuronParameters.data_attribute_types.items()+{
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
-    }.items())
 
 
 class Fit(Data):
