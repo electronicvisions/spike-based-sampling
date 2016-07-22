@@ -7,6 +7,7 @@ import collections as c
 
 from ..logcfg import log
 from .core import Data
+from ..conversion import weight_pynn_to_nest
 
 __all__ = [
         "sources_create_connect",
@@ -123,7 +124,7 @@ def connect_one_to_one(sim, sources, population, weights):
             weights, sources)):
         is_exc = np.array(s_weights > 0., dtype=int)
 
-        if isinstance(population, sim.Population):
+        if isinstance(population, sim.common.BasePopulation):
             pop = population[j:j+1]
         else:
             pop = population[j]
@@ -147,27 +148,59 @@ def connect_one_to_one(sim, sources, population, weights):
 
 def get_population_from_samplers(sim, samplers):
     """
-        Please note that this function assumes
-        that all samplers are adjacent to each other in
-        the corresponding network population.
+        This is a helper function that streamlines the source creation process
+        (DNRY ftw) because all source creation routines would have to perform
+        the same if-else checks.
 
-        It returns either a Population/PopulationView if
-        all samplers were created at once or a list
-        of Populations/PopulationViews if the samplers
-        lie in different networks…
+        It returns either a Population/-View if all samplers were
+        created at once or a list of Populations/-Views if the
+        samplers lie in different networks.
+
+        The main goal is that after calling this function, the source creation
+        routines can be sure to be dealing with PyNN-objects.
+
+        Since the sources can be created both with LIFsampler objects and
+        PyNN-Populations, we need a helper function that either returns the
+        PyNN-Population or extracts the underlying objects from the samplers.
+
+        We have to differentiate several cases: Samplers can be created in
+        the same network or not. In the first case we are able to return a
+        single Population/PopulationView, in the other case we have to return a
+        list of Population/PopulationViews.
+
+        TODO: Replace the list of Population/-Views with an Assembly if
+        Assemblies work correctly now.
+
     """
-    if isinstance(samplers, sim.Population):
+    if isinstance(samplers, sim.common.BasePopulation):
         return samplers
     elif len(samplers) == 1:
         return samplers[0].population
-    elif samplers[0].network["population"] is None:
-        return [s.population for s in samplers]
-    elif samplers[0].network["index"] == 0\
-            and samplers[-1].network["index"]-1 == len(samplers):
-        return samplers[0].network["population"]
-    else:
-        return samplers[0].network["population"][
-                samplers[0].network["index"]:samplers[-1].network["index"]]
+
+    retval = []
+
+    # we group the samplers by what PyNN-Population they belong too.
+    for pop, ss in it.groupby(samplers, lambda s:s.network["population"]):
+        if pop is None:
+            retval.extend((s.population for s in ss))
+
+        ss = list(ss)
+
+        if len(ss) == len(samplers):
+            # all samplers belong to the same population
+            if len(ss) == len(pop):
+                return pop
+            else:
+                return pop[np.array([s.network["index"] for s in samplers])]
+
+        else:
+            if len(ss) == len(pop):
+                retval.append(pop)
+            else:
+                retval.append(
+                        pop[np.array([s.network["index"] for s in samplers])])
+
+    return retval
 
 
 
@@ -190,7 +223,7 @@ class PoissonSourceConfiguration(SourceConfiguration):
         # whether we are connecting to a regular population (calibration etc)
         # or to a list of samplers that a) have the same rates or b) have
         # different rates
-        
+
         if hasattr(sim, "nest") and nest_optimized:
             sources, projections = self.create_nest_optimized(
                     sim, samplers, duration)
@@ -199,7 +232,7 @@ class PoissonSourceConfiguration(SourceConfiguration):
             sources = self.create_regular(sim, samplers, duration)
             population = get_population_from_samplers(sim, samplers)
 
-            if isinstance(samplers, sim.Population):
+            if isinstance(samplers, sim.common.BasePopulation):
                 weights = [self.weights for s in samplers]
             else:
                 weights = [s.source_config.weights for s in samplers]
@@ -216,7 +249,7 @@ class PoissonSourceConfiguration(SourceConfiguration):
 
         log.info("Setting up Poisson sources.")
 
-        if isinstance(samplers, sim.Population):
+        if isinstance(samplers, sim.common.BasePopulation):
             rates = [self.rates] * len(samplers)
         else:
             rates = [s.source_config.rates for s in samplers]
@@ -248,99 +281,84 @@ class PoissonSourceConfiguration(SourceConfiguration):
         sources = {}
         projections = {}
         # _ps = _per_sampler
-        if not isinstance(samplers, sim.Population):
-            num_sources_per_sampler = np.array((len(s.source_config.rates)
-                for s in samplers))
+        if not isinstance(samplers, sim.common.BasePopulation):
+            num_sources_per_sampler = np.array([len(s.source_config.rates)
+                for s in samplers])
             rates = np.hstack((s.source_config.rates for s in samplers))
-            weights = (s.source_config.weights for s in samplers)
+            weights = np.hstack((s.source_config.weights for s in samplers))
 
         else:
             # if we have one population all get the same sources
-            num_sources_per_sampler = np.zeros(len(samplers) * len(self.rates),
+            num_sources_per_sampler = np.zeros(len(samplers),
                     dtype=int) + len(self.rates)
             rates = np.hstack((self.rates for s in samplers))
-            weights = it.repeat(self.weights)
+            weights = np.hstack((self.weights for s in samplers))
             if self.weights[0]*self.weights[1]>0:
                 raise ValueError("Noise weights are both excitatory. Aborting.")
 
         # we want a mapping from each samplers sources into a large flattened
         # array
-        offset_per_sampler = np.r_[np.cumsum(num_sources_per_sampler)]
-        def id_to_sampler(idx):
-            sampler=0
-            idx -= offset_per_sampler[sampler]
-            while idx > 0:
-                sampler += 1
-                idx -= offset_per_sampler[sampler]
-            return sampler
+        offset_per_sampler = np.cumsum(num_sources_per_sampler)
+        def idx_parrot_to_sampler(idx):
+            """
+                Parrot id to sampler id.
+            """
+            return np.where(idx < offset_per_sampler)[0][0]
 
-        uniq_rates, idx_to_src_id = np.unique(rates, return_inverse=True)
+        uniq_rates, idx_parrot_to_generator = np.unique(rates, return_inverse=True)
 
         log.info("Creating {} different poisson sources.".format(
             uniq_rates.size))
-        poisson_gen_t = sim.native_cell_type(source_model)
-        sources = sim.Population(uniq_rates.size,
-                poisson_gen_t(start=0., stop=duration, **source_model_kwargs))
 
-        sources.set(rate=uniq_rates)
+        # PyNN is once again trying to smart in some way when it comes to
+        # native cell types (creating parrot_neurons in a non-optional way), so
+        # we just do everything in CyNEST, FFS!
+        import nest
+        gid_generators = np.array(nest.Create(source_model, uniq_rates.size))
 
-        log.info("Connecting poisson sources to samplers.")
-        # manage which source is connected to what sampler
-        connections = {"exc": [], "inh": []}
-        conn_type = ["inh", "exc"]
+        # acting as sources
+        gid_parrots = np.array(nest.Create("parrot_neuron", rates.size))
 
-        population = get_population_from_samplers(sim, samplers)
-        projections = {}
+        connections = {
+                "generator_to_parrot" : [],
+                "parrot_to_sampler" : [],
+            }
 
-        cur_source = 0
+        nest.SetStatus(gid_generators.tolist(), [{
+            "rate": r,
+            "start": 0.,
+            "stop": duration} for r in uniq_rates])
+        if len(source_model_kwargs) > 0:
+            nest.SetStatus(gid_generators.tolist(), source_model_kwargs)
 
-        if not isinstance(population, list):
-            for i, (sampler, weights) in enumerate(it.izip(samplers, weights)):
-                for j, weight in enumerate(weights):
-                    connections[conn_type[weight > 0]].append(
-                            (idx_to_src_id[cur_source], i,
-                                np.abs(weight)
-                                if population.conductance_based else weight)
-                            )
-                    cur_source += 1
-            for ct in conn_type:
-                projections[ct] = sim.Projection(
-                        sources, population,
-                        receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
-                        synapse_type=sim.StaticSynapse(),
-                        connector=sim.FromListConnector(connections[ct],
-                            column_names=["weight"]))
+        list_pop = get_population_from_samplers(sim, samplers)
 
-        else:
-            for pop, weights in it.izip(population, weights):
-                connections = {"exc": [], "inh": []}
+        if isinstance(list_pop, sim.common.BasePopulation):
+            list_pop = [list_pop]
 
-                for j, weight in enumerate(weights):
-                    connections[conn_type[weight > 0]].append(
-                            (idx_to_src_id[cur_source], 0,
-                                np.abs(weight) if pop.conductance_based else weight)
-                            )
-                    cur_source += 1
+        gid_samplers = np.hstack([p.all_cells.tolist() for p in list_pop])
 
-                for ct in conn_type:
-                    projections.setdefault(ct, []).append(sim.Projection(
-                            sources, pop,
-                            receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
-                            synapse_type=sim.StaticSynapse(),
-                            connector=sim.FromListConnector(connections[ct],
-                                column_names=["weight"])))
+        connections["generator_to_parrot"].append(
+                nest.Connect(gid_generators[idx_parrot_to_generator].tolist(),
+                    gid_parrots.tolist(), "one_to_one"))
 
+        idx_samplers = np.array([idx_parrot_to_sampler(i_parrot)
+            for i_parrot in xrange(gid_parrots.size)])
+        connect_gid_samplers = gid_samplers[idx_samplers]
 
-        #  for pop in population:
-            #  for ct in conn_type:
-                #  projections[ct] = sim.Projection(
-                        #  sources, pop,
-                        #  receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
-                        #  synapse_type=sim.StaticSynapse(),
-                        #  connector=sim.FromListConnector(connections[ct],
-                            #  column_names=["weight"]))
+        connections["parrot_to_sampler"].append(
+                nest.Connect(gid_parrots.tolist(),
+                    connect_gid_samplers.tolist(),
+                    "one_to_one",
+                    {"weight": weight_pynn_to_nest(weights)}))
 
-        return sources, projections
+        sources = {
+                "generators" : gid_generators,
+                "parrots" : gid_parrots,
+            }
+
+        return sources, connections
+
 
     def get_distribution_parameters(self):
         """
@@ -404,7 +422,7 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
                 return len(all_spike_times)-1
 
         # note which source is connected to what samplers with what weight
-        if isinstance(samplers, sim.Population):
+        if isinstance(samplers, sim.common.BasePopulation):
             # all samplers receive same spikes
             for i, w in enumerate(self.weights):
                 source_id = get_index(self.spike_times[self.spike_ids == i])
@@ -438,7 +456,7 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         connection_types = ["inh", "exc"]
         projections = {st: [] for st in connection_types}
 
-        if isinstance(population, sim.Population):
+        if isinstance(population, sim.common.BasePopulation):
             # one population for all samplers
             if population.conductance_based:
                 trans = lambda w: np.abs(w)

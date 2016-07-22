@@ -491,7 +491,7 @@ class LIFsampler(object):
             assert duration is not None, "Instructed to create sources "\
                     "without duration!"
             self.source_config.create_connect(
-                    sim, [self], duration=duration)
+                    sim, self.population, duration=duration)
 
         return self.population
 

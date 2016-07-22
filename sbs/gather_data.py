@@ -141,7 +141,6 @@ def gather_calibration_data(
     log.info("Calibration started.")
     log.info("Preparing network.")
 
-
     calibration = sampler_config.calibration
     neuron_params = sampler_config.neuron_parameters
 
@@ -180,13 +179,19 @@ def gather_calibration_data(
     pop.initialize(v=samples_v_rest)
 
     if isinstance(neuron_params, db.NativeNestMixin):
+        # the nest-native parameter for v_rest is E_L
         pop.set(E_L=samples_v_rest)
     else:
         pop.set(v_rest=samples_v_rest)
 
     if log.getEffectiveLevel() <= logging.DEBUG:
-        for i, s in enumerate(pop):
-            log.debug("v_rest of neuron #{}: {} mV".format(i, s.v_rest))
+        if isinstance(neuron_params, db.NativeNestMixin):
+            for i, s in enumerate(pop):
+                # the nest-native parameter for v_rest is E_L
+                log.debug("v_rest of neuron #{}: {} mV".format(i, s.E_L))
+        else:
+            for i, s in enumerate(pop):
+                log.debug("v_rest of neuron #{}: {} mV".format(i, s.v_rest))
 
     # connect the two
     # projections = bb.connect_sources(sim, calibration.source_config, sources,
@@ -218,9 +223,14 @@ def gather_calibration_data(
 
     samples_p_on = num_spikes * neuron_params.tau_refrac / duration
 
+    if log.getEffectiveLevel() <= logging.DEBUG:
+        log.debug("Samples p_on:\n{}".format(pf(samples_p_on)))
+
     # TODO: Put in debug logging
     log.info("Resulting p_on: {}+-{}".format(
         samples_p_on.mean(), samples_p_on.std()))
+
+    sim.end()
 
     return samples_p_on
 
@@ -271,6 +281,8 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     voltage_trace = np.array(data.segments[0].analogsignalarrays[0])[offset:, 0]
     voltage_trace = np.require(voltage_trace, requirements=["C"])
 
+    sim.end()
+
     return voltage_trace
 
 
@@ -278,7 +290,7 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
 # SAMPLING NETWORK HELPER FUNCTIONS #
 #####################################
 
-#  @comm.RunInSubprocess
+@comm.RunInSubprocess
 def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """
@@ -299,7 +311,7 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs = {}
     population, projections = network.create(duration=duration, **create_kwargs)
 
-    if isinstance(population, sim.Population):
+    if isinstance(population, sim.common.BasePopulation):
         population.record("spikes")
         if initial_vmem is not None:
             population.initialize(v=initial_vmem)
@@ -325,7 +337,7 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
     log.info("Starting data gathering run.")
     sim.run(duration, callbacks=callbacks)
 
-    if isinstance(population, sim.Population):
+    if isinstance(population, sim.common.BasePopulation):
         spiketrains = population.get_data("spikes").segments[0].spiketrains
     else:
         spiketrains = np.vstack(
@@ -342,6 +354,7 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
             "duration" : duration,
             "dt" : dt,
         }
+    sim.end()
 
     return return_data
 

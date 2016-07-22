@@ -88,7 +88,10 @@ class RunInSubprocess(object):
                     "subprocess!".format(self._func_name))
 
     def __call__(self, *args, **kwargs):
-        return self._host(*args, **kwargs)
+        if "DEBUG" in os.environ:
+            return self._func(*args, **kwargs)
+        else:
+            return self._host(*args, **kwargs)
 
     def _host(self, *args, **kwargs):
         script_filename = None

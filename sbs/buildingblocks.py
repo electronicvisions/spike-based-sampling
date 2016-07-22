@@ -56,7 +56,6 @@ def create_sources(sim, source_config, duration):
     else:
         log.error("Source configuration of type {} unkown.".format(
             source_config.__class__.__name__))
-        from pudb import set_trace; set_trace()
 
     return sources
 

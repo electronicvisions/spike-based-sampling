@@ -369,7 +369,7 @@ class BoltzmannMachineBase(object):
             sampler.create(duration=duration, population=local_pop,
                     create_pynn_sources=False)
 
-        self._set_network_in_samplers()
+        self._set_network_in_samplers(population)
 
         # check whether we have the same source configuration for everything
         # if all(s.calibration.source_config ==\
@@ -429,9 +429,9 @@ class BoltzmannMachineBase(object):
 
         return delays
 
-    def _set_network_in_samplers(self):
+    def _set_network_in_samplers(self, population):
         for i, s in enumerate(self.samplers):
-            s.network["population"] = self.population
+            s.network["population"] = population
             s.network["index"] = i
 
 @meta.HasDependencies
