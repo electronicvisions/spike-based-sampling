@@ -100,10 +100,12 @@ def make_log_time(duration, num_steps=10, offset=0):
         eta = utils.get_eta(t_start, time, duration + offset)
         if type(eta) is float:
             eta = utils.format_time(eta)
+        elapsed = utils.get_elapsed_str(t_start)
 
-        log.info("{} ms / {} ms. ETA: {}".format(
+        log.info("{} ms / {} ms. Elapsed: {} ETA: {}".format(
             time - offset,
             duration,
+            elapsed,
             eta))
         return time + increment
 
@@ -358,4 +360,62 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
 
     return return_data
 
+@comm.RunInSubprocess
+def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
+        sim_setup_kwargs):
+    """
+        Measure and return the average firing rates of the noise network.
+    """
+    exec("import {} as sim".format(sim_name))
+    from pprint import pprint
+
+    if sim_setup_kwargs is None:
+        sim_setup_kwargs = {}
+    sim.setup(**sim_setup_kwargs)
+
+    pops, projections = nn_cfg.create_connect(sim, None)
+
+    pop = pops[0]
+
+    pop.record("spikes")
+
+    callbacks = get_callbacks(sim, {
+            "duration" : duration,
+            "offset" : burn_in_time,
+        })
+
+    t_start = time.time()
+    if burn_in_time > 0.:
+        log.info("Burning in noise network for {} ms".format(burn_in_time))
+        sim.run(burn_in_time)
+        eta_from_burnin(t_start, burn_in_time, duration)
+
+    log.info("Starting data gathering run.")
+    sim.run(duration, callbacks=callbacks)
+
+    spiketrains = pop.get_data("spikes").segments[0].spiketrains
+    num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
+            dtype=int)
+
+    if log.getEffectiveLevel() <= logging.DEBUG:
+        log.debug(pf(spiketrains))
+        log.debug(pf(num_spikes))
+
+    rates = {
+        "all" : {
+            "mean" : num_spikes.mean() * 1000. / duration, # Hz
+            "std" : num_spikes.std() * 1000. / duration,   # Hz
+        },
+        "exc" : {
+            "mean" : num_spikes[:nn_cfg.num_exc].mean() * 1000. / duration, # Hz
+            "std" : num_spikes[:nn_cfg.num_exc].std() * 1000. / duration,   # Hz
+        },
+        "inh" : {
+            "mean" : num_spikes[-nn_cfg.num_inh:].mean() * 1000. / duration, # Hz
+            "std" : num_spikes[-nn_cfg.num_inh:].std() * 1000. / duration,   # Hz
+        },
+    }
+    sim.end()
+
+    return rates
 

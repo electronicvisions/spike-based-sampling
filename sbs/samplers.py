@@ -13,6 +13,8 @@ from . import cells
 import itertools as it
 import numpy as np
 
+__all__ = ["LIFsampler"]
+
 
 @meta.HasDependencies
 class LIFsampler(object):
@@ -119,7 +121,10 @@ class LIFsampler(object):
 
     def sync_bias_to_pynn(self):
         assert self.is_created
-        self.population.set(v_rest=self.get_v_rest_from_bias())
+        if isinstance(self.neuron_parameters, db.NativeNestMixin):
+            self.population.set(E_L=self.get_v_rest_from_bias())
+        else:
+            self.population.set(v_rest=self.get_v_rest_from_bias())
 
     @meta.DependsOn()
     def dist_theo(self, value=None):
@@ -224,13 +229,17 @@ class LIFsampler(object):
         else:
             return self.calibration.fit.v_p05 + self.bias_theo_to_bio(bias)
 
-    def calibrate(self, calibration=None, **pre_calibration_parameters):
+    def calibrate(self, calibration=None, perform_pre_calibration=True,
+            **pre_calibration_parameters):
         """
             Calibrate the sampler, using the configuration from the provided
             calibration object.
 
             If no calibration object is given, self.calibration will be used.
-            In this case no pre-calibration is performed.
+
+            A pre-calibration will be done to find optimal V_rest_min and
+            V_rest_max values. This can be disabled by setting
+            perform_pre_calibration to False.
 
             pre_calibration_parameters can be used to alter the parameters of
             the initial slope search (see sbs.db.PreCalibration).
@@ -243,17 +252,15 @@ class LIFsampler(object):
                 - dV
         """
         if calibration is None:
-            do_pre_calibration = False
+            assert self.calibration is not None
             calibration = self.calibration
-        else:
-            do_pre_calibration = True
 
         calibration.sim_name = self.sim_name
 
         # by importing here we avoid importing networking stuff until we have to
         from .gather_data import gather_calibration_data
 
-        if do_pre_calibration:
+        if perform_pre_calibration:
             final_pre_calib = self._do_pre_calibration(calibration,
                     **pre_calibration_parameters)
 
@@ -332,7 +339,7 @@ class LIFsampler(object):
             adj_params = {}
         else:
             if not self.silent:
-                log.info("Computing vmem distribution with bias set to {}.".format(
+                log.debug("Computing vmem distribution with bias set to {}.".format(
                 self.bias_theo))
             adj_params = self.get_adjusted_parameters()
 

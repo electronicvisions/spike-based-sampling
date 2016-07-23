@@ -34,11 +34,13 @@ __all__ = [
     "format_time",
     "gauss",
     "get_eta",
+    "get_elapsed",
     "get_ordered_spike_idx",
     "get_random_string",
     "get_sha1",
     "get_time_tuple",
     "load_pickle",
+    "nest_copy_model",
     "save_pickle",
     "sigmoid",
     "sigmoid_trans",
@@ -192,7 +194,7 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     tau_eff = cm / g_tot
     v_eff = (I_exc + I_inh) / g_l + v_rest
 
-    log.info("tau_eff: {:.3f}".format(tau_eff))
+    log.debug("tau_eff: {:.3f}".format(tau_eff))
 
     # calculate variance of membrane potential
 
@@ -237,7 +239,7 @@ def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     tau_eff = cm / g_tot
     v_eff = (I_exc + I_inh) / g_l + v_rest
 
-    log.info("tau_eff: {:.3f}".format(tau_eff))
+    log.debug("tau_eff: {:.3f}".format(tau_eff))
 
     # calculate variance of membrane potential
 
@@ -305,14 +307,12 @@ def fill_diagonal(array, value=0):
 
 def get_urandom_num(n=1, BYTE_LEN=8):
     rand_bytes = os.urandom(BYTE_LEN*n)
-
     return (struct.unpack("L", rand_bytes[i*BYTE_LEN:(i+1)*BYTE_LEN])[0]
             for i in xrange(n))
 
 
 def get_random_string(n=32, letters=string.ascii_letters):
     nums = get_urandom_num(n)
-    log.debug("Random number {}".format(nums))
     return "".join((letters[i % len(letters)] for i in nums))
 
 
@@ -366,6 +366,9 @@ def get_eta_str(t_start, current, total):
         return format_time(t_elapsed / current * (total - current))
     else:
         return "N/A"
+
+def get_elapsed_str(t_start):
+    return format_time(time.time() - t_start)
 
 
 def save_pickle(obj, filename, force_extension=False, compresslevel=9):
@@ -454,4 +457,23 @@ def ensure_divs(count, mod):
         return mod
     else:
         return count - count % mod
+
+def nest_copy_model(base_model, pynn_compatible=True):
+    """
+        Make a new random copy of a nest model.
+
+        If `pynn_compatible == True`, the labelled version of the synapse will
+        be copied as well.
+    """
+    import nest
+    models = nest.Models()
+    while True:
+        model_name = base_model + "_" + get_random_string(n=8)
+        if model_name not in models:
+            break
+    nest.CopyModel(base_model, model_name)
+    if pynn_compatible:
+        # make labelled version available to pyNN
+        nest.CopyModel(base_model + "_lbl", model_name + "_lbl")
+    return model_name
 

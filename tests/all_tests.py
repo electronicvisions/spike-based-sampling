@@ -5,11 +5,12 @@ import unittest
 
 from test_basics import TestBasics
 from test_rtr_models import TestRTRModels
+from test_noice import TestNN
 
 
-suite_basics = unittest.TestLoader().loadTestsFromTestCase(TestBasics)
-suite_rtr = unittest.TestLoader().loadTestsFromTestCase(TestRTRModels)
-
-all_tests = unittest.TestSuite([suite_basics, suite_rtr])
-
+all_tests = unittest.TestSuite([
+    unittest.TestLoader().loadTestsFromTestCase(TestBasics),
+    unittest.TestLoader().loadTestsFromTestCase(TestRTRModels),
+    unittest.TestLoader().loadTestsFromTestCase(TestNN),
+])
 

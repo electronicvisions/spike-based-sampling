@@ -3,6 +3,7 @@ import numpy as np
 import copy
 import os.path as osp
 import json
+from pprint import pformat as pf
 
 from ..logcfg import log
 
@@ -49,6 +50,8 @@ class Data(object):
     """
     # dict mapping data attribute names to types
     data_attribute_types = {}
+    # dict for default values for unspecified attributes
+    data_attribute_defaults = {}
 
     __metaclass__ = MetaData
 
@@ -88,6 +91,9 @@ class Data(object):
         # set all those attributes that werent specified
         self.set_empty()
 
+    def __str__(self):
+        return pf(self.to_dict())
+
     def get_dict(self):
         return self.to_dict(with_type=False)
 
@@ -99,6 +105,9 @@ class Data(object):
             json.dump(self.to_dict(), f,
                     ensure_ascii=False, indent=2)
 
+    def to_json(self):
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
     def copy(self):
         return self.__class__(**self.to_dict())
 
@@ -108,7 +117,7 @@ class Data(object):
         """
         for d in self.data_attribute_types:
             if not hasattr(self, d):
-                setattr(self, d, None)
+                setattr(self, d, self.data_attribute_defaults.get(d, None))
 
     def to_dict(self, with_type=True):
         """
@@ -165,4 +174,19 @@ class Data(object):
 
             setattr(self, name, d)
 
+    def __ne__(self, other):
+        return not (self == other)
+
+    def __eq__(self, other):
+        if not isinstance(other, Data):
+            return False
+
+        d_self = self.to_dict()
+        d_other = other.to_dict()
+
+        if len(set(d_self.iterkeys()) ^ set(d_other.iterkeys())) > 0:
+            # we have different sets of keys -> not equal
+            return False
+
+        return all((d_self[k] == d_other[k] for k in d_self.iterkeys()))
 

@@ -225,11 +225,17 @@ class TestBasics(unittest.TestCase):
         log.info("Joint prob (theo):\n"\
                 + pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
-        log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
-            bm.dist_marginal_theo, bm.dist_marginal_sim)))
+        dkl_marginal = sbs.utils.dkl_sum_marginals(
+            bm.dist_marginal_theo, bm.dist_marginal_sim)
+        log.info("DKL marginal: {}".format(dkl_marginal))
+        self.assertTrue(dkl_marginal > 0)
+        self.assertTrue(dkl_marginal < 1)
 
-        log.info("DKL joint: {}".format(sbs.utils.dkl(
-                bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
+        dkl_joint = sbs.utils.dkl(
+                bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())
+        log.info("DKL joint: {}".format(dkl_joint))
+        self.assertTrue(dkl_joint > 0)
+        self.assertTrue(dkl_joint < 1)
 
         bm.plot_dist_marginal(save=True)
         bm.plot_dist_joint(save=True)
@@ -304,11 +310,17 @@ class TestBasics(unittest.TestCase):
         log.info("Joint prob (theo):\n"\
                 + pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
-        log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
-            bm.dist_marginal_theo, bm.dist_marginal_sim)))
+        dkl_marginal = sbs.utils.dkl_sum_marginals(
+            bm.dist_marginal_theo, bm.dist_marginal_sim)
+        log.info("DKL marginal: {}".format(dkl_marginal))
+        self.assertTrue(dkl_marginal > 0)
+        self.assertTrue(dkl_marginal < 1)
 
-        log.info("DKL joint: {}".format(sbs.utils.dkl(
-                bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
+        dkl_joint = sbs.utils.dkl(
+                bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())
+        log.info("DKL joint: {}".format(dkl_joint))
+        self.assertTrue(dkl_joint > 0)
+        self.assertTrue(dkl_joint < 1)
 
         bm.plot_dist_marginal(save=True)
         bm.plot_dist_joint(save=True)
@@ -399,11 +411,17 @@ class TestBasics(unittest.TestCase):
         log.info("Joint prob (theo):\n"\
                 + pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
-        log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
-            bm.dist_marginal_theo, bm.dist_marginal_sim)))
+        dkl_marginal = sbs.utils.dkl_sum_marginals(
+            bm.dist_marginal_theo, bm.dist_marginal_sim)
+        log.info("DKL marginal: {}".format(dkl_marginal))
+        self.assertTrue(dkl_marginal > 0)
+        #  self.assertTrue(dkl_marginal < 1) # not assured here
 
-        log.info("DKL joint: {}".format(sbs.utils.dkl(
-                bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
+        dkl_joint = sbs.utils.dkl(
+                bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())
+        log.info("DKL joint: {}".format(dkl_joint))
+        self.assertTrue(dkl_joint > 0)
+        #  self.assertTrue(dkl_joint < 1) # not assured here
 
         bm.plot_dist_marginal(save=True)
         bm.plot_dist_joint(save=True)

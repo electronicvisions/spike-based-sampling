@@ -176,8 +176,6 @@ class DependsOn(object):
         return self
 
     def __get__(self, instance, owner):
-        log.debug("Getting {}.".format(self.attr_name))
-
         if self.needs_update(instance):
             if log.getEffectiveLevel() <= logging.DEBUG:
                 log.debug("{} needs update.".format(self.attr_name))
@@ -188,7 +186,6 @@ class DependsOn(object):
     def __set__(self, instance, value):
         # self._propagate_dependencies(type(instance))
         self.wipe(instance, force=True)
-        log.debug("Setting {}.".format(self.attr_name))
         setattr(instance, self.value_name, self._func(instance, value))
 
     def _propagate_dependencies(self, klass):
