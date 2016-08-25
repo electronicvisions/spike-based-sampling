@@ -22,9 +22,6 @@ from . import gather_data
 from . import meta
 from . import buildingblocks as bb
 from . import conversion as conv
-# from . import cells
-
-# cells.patch_pynn()
 
 @meta.HasDependencies
 class BoltzmannMachineBase(object):
@@ -224,7 +221,7 @@ class BoltzmannMachineBase(object):
 
     @meta.DependsOn("biases_theo", "biases_bio")
     def v_rests(self):
-        return np.array([s.get_v_rest_from_bias() for s in samplers])
+        return np.array([s.get_v_rest_from_bias() for s in self.samplers])
 
 
     def convert_weights_bio_to_theo(self, weights):
