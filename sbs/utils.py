@@ -41,6 +41,7 @@ __all__ = [
     "get_time_tuple",
     "load_pickle",
     "nest_copy_model",
+    "nest_key_connections",
     "save_pickle",
     "sigmoid",
     "sigmoid_trans",
@@ -370,7 +371,6 @@ def get_eta_str(t_start, current, total):
 def get_elapsed_str(t_start):
     return format_time(time.time() - t_start)
 
-
 def save_pickle(obj, filename, force_extension=False, compresslevel=9):
     """
         Save object in compressed pickle filename.
@@ -476,4 +476,27 @@ def nest_copy_model(base_model, pynn_compatible=True):
         # make labelled version available to pyNN
         nest.CopyModel(base_model + "_lbl", model_name + "_lbl")
     return model_name
+
+def nest_key_connections(conn):
+    """
+        Key for sorting nest connections.
+
+        nest.GetConnections(...) returns connection objects by thread-order,
+        hence the ordering of connections is different in the single- and each
+        multithreaded case.
+
+        When using this function to sort connections returned by
+        nest.GetConnections(...), they will have the same ordering as in the
+        single threaded setup.
+
+        The ordering is:
+            * source-gid
+            * target-gid
+            * receptor-port (usually unimpotant as we have at most one synapse
+                             between any two nodes)
+
+        We implicitly ignore synapse-model-id as well as thread-id.
+    """
+    # source-id, target-id, receptor-port
+    return conn[0], conn[1], conn[4]
 

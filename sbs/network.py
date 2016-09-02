@@ -23,6 +23,7 @@ from . import meta
 from . import buildingblocks as bb
 from . import conversion as conv
 
+
 @meta.HasDependencies
 class BoltzmannMachineBase(object):
     """
@@ -997,7 +998,10 @@ class RapidBMBase(BoltzmannMachineBase):
                             else self.delays,
                 "model" : self.local_nest_synapse_type})
 
-        self._nest_connections = nest.GetConnections(gids, gids)
+        # we need to sort the returned connections by gids, not by thread
+        # to stay consistent with the update machinery
+        self._nest_connections = sorted(nest.GetConnections(gids, gids),
+                key=utils.nest_key_connections)
         self.create_update_machinery()
 
     def use_same_shared_update_data_as(self, other_bm):
@@ -1816,9 +1820,10 @@ class MixinRBM(object):
                     syn_spec={"model" : self.local_nest_synapse_type})
 
         log.info("Reading connections from NEST.")
-        connections = nest.GetConnections(gids, gids)
-
-        self._nest_connections = connections
+        # we need to sort the returned connections by gids, not by thread
+        # to stay consistent with the update machinery
+        self._nest_connections = sorted(nest.GetConnections(gids, gids),
+                key=utils.nest_key_connections)
 
         # log.info("Setting weights to zero.")
         # nest.SetStatus(self._nest_connections, "weight", 0.)
