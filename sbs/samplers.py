@@ -267,6 +267,12 @@ class LIFsampler(object):
             # copy the final V_rest ranges
             calibration.V_rest_min = final_pre_calib.V_rest_min
             calibration.V_rest_max = final_pre_calib.V_rest_max
+            pmin = final_pre_calib.lower_bound
+            pmax = final_pre_calib.upper_bound
+        else:
+            pmin = 0.0
+            pmax = 1.0
+
 
         log.info("Taking {} samples from {:.3f}mV to {:.3f}mV…".format(
                 calibration.num_samples,
@@ -295,7 +301,9 @@ class LIFsampler(object):
                 self.calibration.get_samples_v_rest(),
                 self.calibration.samples_p_on,
                 guess_p05=self.neuron_parameters.v_thresh,
-                guess_alpha=self.alpha_theo)
+                guess_alpha=self.alpha_theo,
+                p_min=pmin,
+                p_max=pmax,)
 
 
         if not self.silent:
@@ -719,6 +727,7 @@ class LIFsampler(object):
             lower_bound=0.05, upper_bound=0.95,
             duration=1000., #  time spent when scanning for the sigmoid
             max_search_steps=100,
+            min_num_points=10,
         )
         for k in ["sim_name", "sim_setup_kwargs", "burn_in_time", "dt",
                 "source_config"]:
@@ -793,6 +802,28 @@ class LIFsampler(object):
 
         pre_calib.V_rest_min = samples_v_rest[idx_low]
         pre_calib.V_rest_max = samples_v_rest[idx_high]
+
+        # in case of a very steep activation function the previously
+        # found voltage interval might be to wide for a sensible fit
+        while len(idx) < pre_calib.min_num_points:
+            pre_calib.dV = (pre_calib.V_rest_max - pre_calib.V_rest_min) \
+                    / (10.*pre_calib.min_num_points)
+            samples_p_on = gather_calibration_data(pre_sampler_config)
+            samples_v_rest = pre_calib.get_samples_v_rest()
+
+            idx = np.where((samples_p_on < pre_calib.upper_bound)
+                        * (samples_p_on > pre_calib.lower_bound))[0]
+
+            if len(idx) > 0:
+                idx_low = max(0, idx[0]-1)
+                idx_high = min(samples_p_on.size-1, idx[-1]+1)
+
+            else:
+                idx_high = np.where(samples_p_on > pre_calib.upper_bound)[0][0]
+                idx_low = idx_high - 1
+
+            pre_calib.V_rest_min = samples_v_rest[idx_low]
+            pre_calib.V_rest_max = samples_v_rest[idx_high]
 
         return pre_calib
 

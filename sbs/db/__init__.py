@@ -80,6 +80,7 @@ class PreCalibration(Data):
         "burn_in_time" : float,
 
         "max_search_steps" : int,
+        "min_num_points"   : int,
 
         "lower_bound": float,
         "upper_bound": float,
