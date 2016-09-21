@@ -31,7 +31,7 @@ class BoltzmannMachineBase(object):
     """
 
     def __init__(self, num_samplers, sim_name="pyNN.nest",
-            sampler_config=None, sampler_kwargs={"silent" : False}):
+                 sampler_config=None, sampler_kwargs={"silent": True}):
         """
             Sets up a Boltzmann network.
 
@@ -65,8 +65,17 @@ class BoltzmannMachineBase(object):
         if isinstance(sampler_kwargs, dict):
             sampler_kwargs = it.repeat(sampler_kwargs)
 
-        self.samplers = [samplers.LIFsampler(npc, **kwargs)
-                for npc, kwargs in it.izip(sampler_config, sampler_kwargs)]
+        self.samplers = [samplers.LIFsampler(npc, **kwargs) for npc, kwargs
+                         in it.izip(sampler_config, sampler_kwargs)]
+
+        if not all(s.tso_parameters is self.samplers[0].tso_parameters
+                   for s in self.samplers):
+            raise ValueError("currently we only support a single TSO "
+                             "configuration among all samplers")
+
+        # unfortunately, tso_params was used before and we need to stay
+        # backwards-compatible :(
+        self.tso_params = self.samplers[0].tso_parameters
 
         self.weights_theo = 0.
         # biases are set to zero automaticcaly by the samplers
@@ -74,61 +83,6 @@ class BoltzmannMachineBase(object):
         self.saturating_synapses_enabled = False
         self.use_proper_tso = True
         self.delays = 0.1
-
-    ########################
-    # pickle serialization #
-    ########################
-    # generally we only save the ids of samplers and calibrations used
-    # (we can be sure that only saved samplers are used in the BM-network as
-    # there is no way to calibrate them from the BM-network)
-    # plus record biases and weights
-    # def __getstate__(self):
-        # log.debug("Reading state information for pickling.")
-        # state = {
-                # "calibration_ids" : [sampler.get_calibration_id()
-                    # for sampler in self.samplers],
-                # "current_basename" : db.current_basename,
-            # }
-        # state["weights"] = self.weights_theo
-
-        # state["biases"] = self.biases_theo
-
-        # state["delays"] = self.delays
-
-        # state["sim_name"] = self.sim_name
-        # state["num_samplers"] = self.num_samplers
-        # state["params_ids"] = [sampler.get_parameters_id()
-                # for sampler in self.samplers]
-
-        # state["saturating_synapses_enabled"] = self.saturating_synapses_enabled
-
-        # state["tso_params"] = self.tso_params
-
-        # return state
-
-    # def __setstate__(self, state):
-        # log.debug("Setting state information for unpickling.")
-
-        # if state["current_basename"] != db.current_basename:
-            # raise Exception("Database mismatch, this network should be "
-            # "restored with db {}".format(state["current_basename"]))
-
-        # self.__init__(state["num_samplers"],
-                # sim_name=state["sim_name"],
-                # neuron_parameters_db_ids=state["params_ids"])
-
-        # for i, cid in enumerate(state["calibration_ids"]):
-            # if cid is not None:
-                # self.samplers[i].load_calibration(id=cid)
-
-        # self.weights_theo = state["weights"]
-        # self.biases_theo = state["biases"]
-
-        # self.delays = state["delays"]
-
-        # self.tso_params = state["tso_params"]
-
-        # self.saturating_synapses_enabled = state["saturating_synapses_enabled"]
 
     ######################
     # regular attributes #
@@ -190,6 +144,9 @@ class BoltzmannMachineBase(object):
 
     @meta.DependsOn("biases_bio")
     def biases_theo(self, biases=None):
+        """
+            Always set AS A WHOLE array, do not modify the bias-array in-place!
+        """
         if biases is None:
             # getter
             return np.array([s.bias_theo for s in self.samplers])
@@ -206,6 +163,9 @@ class BoltzmannMachineBase(object):
 
     @meta.DependsOn("biases_theo")
     def biases_bio(self, biases=None):
+        """
+            Always set AS A WHOLE array, do not modify the bias-array in-place!
+        """
         if biases is None:
             # getter
             return np.array([s.bias_bio for s in self.samplers])
@@ -274,9 +234,14 @@ class BoltzmannMachineBase(object):
              tau_fac    double - time constant for facilitation in ms, default=0 (off)
         """
         if params is None:
-            return {"U": 1., "u": 1., "x" : 0.}
+            return db.TsoParameters()
         else:
-            return params
+            if isinstance(params, db.TsoParameters):
+                return params
+            elif isinstance(params, dict):
+                return db.TsoParameters(**params)
+            else:
+                raise ValueError("Invalid TSO parameters supplied")
 
     @meta.DependsOn()
     def all_samplers_same_model(self):
@@ -488,7 +453,7 @@ class ThoroughBM(BoltzmannMachineBase):
 
         column_names = ["weight", "delay"]
 
-        tau_rec_overwritten = "tau_rec" in self.tso_params
+        tau_rec_overwritten = self.tso_params.tau_rec is not None
 
         if self.saturating_synapses_enabled:
             log.info("Creating saturating synapses.")
@@ -514,6 +479,9 @@ class ThoroughBM(BoltzmannMachineBase):
             log.info("Connecting {} weights.".format(receptor_type[wt]))
 
             weights = self.weights_bio.copy()
+
+            if self.saturating_synapses_enabled:
+                weights *= self.tso_params.weight_rescale
             # weights[np.logical_not(weight_is[wt])] = np.NaN
 
             if wt == "inh":
@@ -544,12 +512,14 @@ class ThoroughBM(BoltzmannMachineBase):
 
             if self.saturating_synapses_enabled:
                 if not _nest_optimization or not self.use_proper_tso:
-                    tso_params = copy.deepcopy(self.tso_params)
-                    try:
-                        del tso_params["u"]
-                        del tso_params["x"]
-                    except KeyError:
-                        pass
+                    tso_params = self.tso_params.get_dict()
+
+                    # delete all keys that are not parameters of the pyNN
+                    # synapse
+                    del tso_params["u"]
+                    del tso_params["x"]
+                    del tso_params["weight_rescale"]
+
                     synapse_type = sim.TsodyksMarkramSynapse(weight=0.,
                             **tso_params)
                 else:
@@ -571,9 +541,15 @@ class ThoroughBM(BoltzmannMachineBase):
                         sim.nest.CopyModel("tsodyks2_synapse",
                             "avoid_pynn_trying_to_be_smart")
 
+                    tso_dikt = utils.filter_dict(self.tso_params.get_dict(),
+                            lambda _, v: v is not None)
+
+                    # weight rescaling is something we do manually, it is not
+                    # a parameter of the synapse type -> delete
+                    del tso_dikt["weight_rescale"]
+
                     synapse_type = sim.native_synapse_type(
-                        "avoid_pynn_trying_to_be_smart")(
-                        **self.tso_params)
+                        "avoid_pynn_trying_to_be_smart")(**tso_dikt)
 
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)
@@ -585,24 +561,6 @@ class ThoroughBM(BoltzmannMachineBase):
                     receptor_type=receptor_type[wt])
 
         return projections
-
-
-    ########################
-    # pickle serialization #
-    ########################
-    # def __getstate__(self):
-        # state = super(ThoroughBM, self).__getstate__(self)
-
-        # state["selected_sampler_idx"] = self.selected_sampler_idx
-        # state["spike_data"] = self.spike_data
-
-        # return state
-
-    # def __setstate__(self, state):
-        # super(ThoroughBM, self).__setstate__(state)
-
-        # self.spike_data = state["spike_data"]
-        # self.selected_sampler_idx = state["selected_sampler_idx"]
 
 
     #########################
@@ -695,13 +653,6 @@ class ThoroughBM(BoltzmannMachineBase):
     def save(self, filename):
         """
             Save the current Boltzmann network in zipped-pickle form.
-
-            The pickle will contain current spike_data but nothing that can be
-            recomputed rather quickly such as distributions.
-
-            NOTE: Neuron parameters and loaded calibrations will only be
-            included as Ids in the database. So make sure to keep the same
-            database around if you want to restore a boltzmann network.
         """
         utils.save_pickle(self, filename)
 
@@ -1694,7 +1645,11 @@ class MixinRBM(object):
             sorted_weights.append(
                     it.chain(*it.chain(*it.izip(w_prev_layer, w_next_layer))))
 
-        params = [{"weight": w} for w in it.chain(*sorted_weights)]
+        if self.saturating_synapses_enabled:
+            params = [{"weight": w * self.tso_params.weight_rescale}
+                                 for w in it.chain(*sorted_weights)]
+        else:
+            params = [{"weight": w} for w in it.chain(*sorted_weights)]
 
         #  params = []
         #  for l_weights in self.weights_bio:
@@ -1940,8 +1895,15 @@ class ThoroughRBM(MixinRBM, BoltzmannMachineBase):
             if all_tau_syn_E_same and all_tau_syn_I_same and tau_syn_same:
                 model_name = utils.nest_copy_model("tsodyks2_synapse")
                 import nest
-                tso_params = copy.deepcopy(self.tso_params)
-                tso_params["tau_rec"] = neuron_params.tau_syn_E
+                tso_params = self.tso_params.get_dict()
+                del tso_params["weight_rescale"]
+
+                # TODO: Make this more pretty
+                if tso_params.get("tau_rec", None) is None:
+                    tso_params["tau_rec"] = neuron_params.tau_syn_E
+                if self.tso_params.tau_fac is None:
+                    del tso_params["tau_fac"]
+
                 nest.SetDefaults(model_name, tso_params)
                 self.local_nest_synapse_type = model_name
 
@@ -1960,6 +1922,10 @@ class ThoroughRBM(MixinRBM, BoltzmannMachineBase):
         pass
 
 
+##################################################
+# THIS CODE IS NOT TESTED !! DO NOT USE (YET) !! #
+##################################################
+
 @meta.HasDependencies
 class RapidRBMBase(MixinRBM, RapidBMBase):
     """
@@ -1974,6 +1940,7 @@ class RapidRBMImprintCurrent(MixinRBM, RapidBMImprintCurrent):
     """
     pass
 
+@meta.HasDependencies
 class RapidRBMImprintVmem(MixinRBM, RapidBMImprintVmem):
     """
         RBM with current imprints.

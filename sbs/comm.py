@@ -12,11 +12,12 @@ import os.path as osp
 import cPickle as pkl
 import os
 import atexit
-import functools as ft
 import tempfile
+import itertools as it
+import string
+import traceback
 
 from .logcfg import log
-from . import utils
 
 BUFLEN = 4096
 
@@ -44,7 +45,13 @@ def send_object(socket, obj):
 
 
 def recv_object(socket):
-    obj_len = int(socket.recv(BUFLEN))
+    try:
+        obj_len = int(socket.recv(BUFLEN))
+    except ValueError:
+        msg = "Computation in subprocess failed. "\
+              "See log further up for details."
+        log.error(msg)
+        raise IOError(msg)
     socket.send("ACK")
     recv_counter = 0
     chunks = []
@@ -58,6 +65,7 @@ def recv_object(socket):
 
     obj = pkl.loads("".join(chunks))
     socket.send("ACK")
+
     return obj
 
 
@@ -111,8 +119,6 @@ class RunInSubprocess(object):
             return_values = self._recv_returnvalue(conn)
 
             process.wait()
-        except:
-            raise
         finally:
             if process is not None and process.poll() is None:
                 process.kill()
@@ -128,6 +134,11 @@ class RunInSubprocess(object):
         return_value = None
         try:
             return_value = self._func(*args, **kwargs)
+        except:
+            E, e, tb = sys.exc_info()
+
+            # send exception
+            self._send_returnvalue(socket, (E, e, traceback.extract_tb(tb)))
         finally:
             self._send_returnvalue(socket, return_value)
 
@@ -212,7 +223,27 @@ class RunInSubprocess(object):
 
     def _recv_returnvalue(self, socket):
         log.debug("Receiving return value.")
-        return recv_object(socket)
+        retval = recv_object(socket)
+
+        if isinstance(retval, tuple)\
+                and len(retval) == 3\
+                and issubclass(retval[0], BaseException):
+            # an exception has occured in the client, print it
+            E, e, tb_list = retval
+
+            # log each line from traceback and exception seperately to the
+            # error-stream
+            map(log.error, it.chain(*it.imap(
+                lambda x: string.split(string.strip(x), "\n"),
+                it.chain(
+                    traceback.format_list(tb_list),
+                    traceback.format_exception_only(E, e))
+                )))
+
+            raise IOError("Client raised {}, "
+                          "see log for details.".format(E.__name__))
+
+        return retval
 
     def _get_module_import_name(self):
         if self._func_module != "__main__":
@@ -265,9 +296,7 @@ def _delete_script_file(script_filename, warn=True, cleanup=False):
                 # gets deleted even if there is an error, but also doesn't
                 # linger around if several subprocess calls are made over the
                 # course of a single run.
-                log.warn( "Could not delete temporary script file for "
-                        "subprocess: " + script_filename)
+                log.warn("Could not delete temporary script file for "
+                         "subprocess: " + script_filename)
         else:
             raise e
-
-

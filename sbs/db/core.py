@@ -3,24 +3,27 @@ import numpy as np
 import copy
 import os.path as osp
 import json
+import logging
 from pprint import pformat as pf
 
 from ..logcfg import log
 
 __all__ = [
-        "MetaData",
         "Data",
     ]
 
 
-def join_data_attribute_types(bases, dct):
+def join_base_dicts(bases, dct, attribute):
+    """
+        Join dictionaries from base classes and then update with dct.
+    """
     joined = {}
 
-    for d in ( b.__dict__.get("data_attribute_types", {})
+    for d in ( b.__dict__.get(attribute, {})
             for b in bases):
         joined.update(d)
 
-    joined.update(dct.get("data_attribute_types", {}))
+    joined.update(dct.get(attribute, {}))
 
     return joined
 
@@ -32,16 +35,25 @@ class MetaData(type):
     registry = {}
 
     def __new__(cls, name, bases, dct):
-        dct["data_attribute_types"] = join_data_attribute_types(bases, dct)
+        for attr in ["data_attribute_types", "data_attribute_defaults"]:
+            dct[attr] = join_base_dicts(bases, dct, attribute=attr)
 
         klass = super(MetaData, cls).__new__(cls, name, bases, dct)
 
-        cls.registry[name] = klass
+        cls.register_class(name, klass)
+
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.debug("Registered {} -> {}".format(name, id(cls.get_class(name))))
+
         return klass
 
     @classmethod
     def get_class(cls, name):
         return cls.registry[name]
+
+    @classmethod
+    def register_class(cls, name, klass):
+        cls.registry[name] = klass
 
 
 class Data(object):
@@ -56,14 +68,20 @@ class Data(object):
     __metaclass__ = MetaData
 
     @classmethod
-    def load(cls, filepath=None):
-        with open(filepath) as f:
+    def load(cls, filepath):
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.debug("Loading {} [id: {}]".format(cls.__name__, id(cls)))
+
+        with open(filepath, "r") as f:
             datadict = json.load(f)
 
         if datadict["_type"] != cls.__name__:
             log.warn("Using json data for type {} to create type {}".format(
                 datadict["_type"], cls.__name__))
         del datadict["_type"]
+
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.debug(pf({k: id(v) for k,v in cls.__metaclass__.registry.iteritems()}))
 
         return cls(**datadict)
 
@@ -94,8 +112,28 @@ class Data(object):
     def __str__(self):
         return pf(self.to_dict())
 
+    def __setattr__(self, name, value):
+        """
+            Make sure that the attribute we set is part of our default
+            dictionary.
+        """
+        if name not in self.data_attribute_types.keys():
+            error_msg = "{} not part of {}'s data-attributes! "\
+                "Setting anyway..".format(name, self.__class__.__name__)
+            log.error(error_msg)
+            raise ValueError(error_msg)
+
+        return object.__setattr__(self, name, value)
+
     def get_dict(self):
         return self.to_dict(with_type=False)
+
+    @classmethod
+    def get_attr_keys(cls):
+        """
+            Return a list of all attribute keys.
+        """
+        return cls.data_attribute_types.keys()
 
     def write(self, path):
         if osp.splitext(path)[1] != ".json":
@@ -122,7 +160,7 @@ class Data(object):
     def to_dict(self, with_type=True):
         """
             If `with_type` is True, the returned dictionary
-            contains a special "_type" field.
+            contains a special "_type" field and is JSON-compatible.
         """
         dikt = {d: self._convert_attr(d, with_type=with_type)
                 for d in self.data_attribute_types}
@@ -135,6 +173,9 @@ class Data(object):
             Helper functions properly converting attributes.
 
             Returns a JSON compatible datatype.
+
+            If `with_type` is True, the returned dictionary
+            contains a special "_type" field and is JSON-compatible.
         """
         d = getattr(self, name)
 
@@ -142,13 +183,18 @@ class Data(object):
             return d.to_dict(with_type=with_type)
 
         if isinstance(d, np.ndarray):
-            return d.tolist()
+            if with_type:
+                return d.tolist()
+            else:
+                return d.copy()
 
         return copy.deepcopy(d)
 
     def from_dict(self, dikt):
         for name, d in dikt.iteritems():
             if name == "_type":
+                # _type is present in the dictionary supplied when loading
+                # recursive data structures
                 continue
             try:
                 desired_type = self.data_attribute_types[name]
@@ -162,11 +208,12 @@ class Data(object):
                 continue
 
             if isinstance(d, dict) and issubclass(desired_type, Data):
-                if d["_type"] != desired_type.__name__:
-                    new_desired_type = MetaData.get_class(d["_type"])
-                    assert issubclass(new_desired_type, desired_type)
-                    desired_type = new_desired_type
-                del d["_type"]
+                # always load class from metaclass to prevent duplicates
+                desired_type = MetaData.get_class(d["_type"])
+
+                if log.getEffectiveLevel() <= logging.DEBUG:
+                    log.debug("Creating: {} [id: {}]".format(
+                        desired_type.__name__, id(desired_type)))
                 d = desired_type(**d)
 
             elif d is not None and issubclass(desired_type, np.ndarray):

@@ -16,6 +16,7 @@ __all__ = [
         "PoissonSourceConfiguration",
         "FixedSpikeTrainConfiguration",
         "NoiseNetworkSourceConfiguration",
+        "PoissonPoolSourceConfiguration",
     ]
 
 
@@ -71,7 +72,7 @@ class SourceConfiguration(Data):
         """
         raise NotImplementedError
 
-# helper functions 
+# helper functions
 def connect_one_to_all(sim, sources, samplers, weights):
     """
         BROKEN, DO NOT USE
@@ -227,8 +228,8 @@ class PoissonSourceConfiguration(SourceConfiguration):
         Negative weights: inhibitory
     """
     data_attribute_types = {
-            "rates" : np.ndarray,
-            "weights" : np.ndarray,
+            "rates": np.ndarray,
+            "weights": np.ndarray,
         }
 
     def create_connect(self, sim, samplers, duration, nest_optimized=True,
@@ -260,7 +261,7 @@ class PoissonSourceConfiguration(SourceConfiguration):
         return sources, projections
 
     def create_regular(self, sim, samplers, duration):
-        source_params = {"start" : 0.}
+        source_params = {"start": 0.}
         source_t = sim.SpikeSourcePoisson
         source_params["duration"] = duration
 
@@ -289,14 +290,11 @@ class PoissonSourceConfiguration(SourceConfiguration):
         if "lookahead_poisson_generator" in sim.nest.Models():
             source_model = "lookahead_poisson_generator"
             source_model_kwargs = {
-                    "steps_lookahead" : 10000
+                    "steps_lookahead": 10000
                 }
         else:
             source_model = "poisson_generator"
             source_model_kwargs = {}
-
-        sources = {}
-        projections = {}
 
         if not isinstance(samplers, sim.common.BasePopulation):
             num_sources_per_sampler = np.array([len(s.source_config.rates)
@@ -336,9 +334,10 @@ class PoissonSourceConfiguration(SourceConfiguration):
         # acting as sources
         gid_parrots = np.array(nest.Create("parrot_neuron", rates.size))
 
-        connections = {
-                "generator_to_parrot" : [],
-                "parrot_to_sampler" : [],
+        # dictionary to nest connection-tuples, these are NOT PyNN-projections!
+        nest_connections = {
+                "generator_to_parrot": [],
+                "parrot_to_sampler": [],
             }
 
         nest.SetStatus(gid_generators.tolist(), [{
@@ -355,7 +354,7 @@ class PoissonSourceConfiguration(SourceConfiguration):
 
         gid_samplers = np.hstack([p.all_cells.tolist() for p in list_pop])
 
-        connections["generator_to_parrot"].append(
+        nest_connections["generator_to_parrot"].append(
                 nest.Connect(gid_generators[idx_parrot_to_generator].tolist(),
                     gid_parrots.tolist(), "one_to_one"))
 
@@ -363,18 +362,18 @@ class PoissonSourceConfiguration(SourceConfiguration):
             for i_parrot in xrange(gid_parrots.size)])
         connect_gid_samplers = gid_samplers[idx_samplers]
 
-        connections["parrot_to_sampler"].append(
+        nest_connections["parrot_to_sampler"].append(
                 nest.Connect(gid_parrots.tolist(),
                     connect_gid_samplers.tolist(),
                     "one_to_one",
                     {"weight": weight_pynn_to_nest(weights)}))
 
         sources = {
-                "generators" : gid_generators,
-                "parrots" : gid_parrots,
+                "generators": gid_generators,
+                "parrots": gid_parrots,
             }
 
-        return sources, connections
+        return sources, nest_connections
 
 
     def get_distribution_parameters(self):
@@ -386,10 +385,10 @@ class PoissonSourceConfiguration(SourceConfiguration):
         is_inh = np.logical_not(is_exc)
 
         return {
-            "rates_exc" : self.rates[is_exc],
-            "rates_inh" : self.rates[is_inh],
-            "weights_exc" : self.weights[is_exc],
-            "weights_inh" : self.weights[is_inh],
+            "rates_exc": self.rates[is_exc],
+            "rates_inh": self.rates[is_inh],
+            "weights_exc": self.weights[is_exc],
+            "weights_inh": self.weights[is_inh],
         }
 
 
@@ -404,10 +403,10 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         Spike times in ms.
     """
     data_attribute_types = {
-            "rates" : np.ndarray,
-            "weights" : np.ndarray,
-            "spike_times" : np.ndarray,
-            "spike_ids" : np.ndarray,
+            "rates": np.ndarray,
+            "weights": np.ndarray,
+            "spike_times": np.ndarray,
+            "spike_ids": np.ndarray,
         }
 
     def create_connect(self, sim, samplers, **kwargs):
@@ -423,7 +422,7 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         population = get_population_from_samplers(sim, samplers)
 
         # list of numpy array with the corresponding spike times
-        all_spike_times = [] 
+        all_spike_times = []
 
         # all connection tuples
         conn_list = []
@@ -466,7 +465,7 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         sources = sim.Population(num_sources, sim.SpikeSourceArray())
         for src, st in it.izip(sources, spike_times):
             src.spike_times = st
-        log.info("Created {} fixed spike train sources.".format(num_sources)) 
+        log.info("Created {} fixed spike train sources.".format(num_sources))
         return sources
 
     def connect_sources_regular(self, sim, sources, population, conn_list):
@@ -529,10 +528,10 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
         is_inh = np.logical_not(is_exc)
 
         return {
-            "rates_exc" : self.rates[is_exc],
-            "rates_inh" : self.rates[is_inh],
-            "weights_exc" : self.weights[is_exc],
-            "weights_inh" : self.weights[is_inh],
+            "rates_exc": self.rates[is_exc],
+            "rates_inh": self.rates[is_inh],
+            "weights_exc": self.weights[is_exc],
+            "weights_inh": self.weights[is_inh],
         }
 
 
@@ -547,31 +546,31 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
            "gamma": float, # percentage of excitatory neurons (in [0,1])
            "epsilon": float, # connectivity (#presynaptic partners=epsilon * N)
 
-           "epsilon_external" : float, # connectivity to samplers
+           "epsilon_external": float, # connectivity to samplers
 
-           "neuron_parameters" : NeuronParameters,
+           "neuron_parameters": NeuronParameters,
 
            # synapse parameters
-           "delay_internal" : float, # within netowrk
-           "delay_external" : float, # to samplers
+           "delay_internal": float, # within netowrk
+           "delay_external": float, # to samplers
 
            "g": float, # relative weight of inhibitory synapses
                        # g= (J_I * tau_I * |V_rest-V_rev_I|)
                        #   /(J_E * tau_E * |V_rest-V_rev_E|)
 
-           "JE" : float, # excitatory weight [µS]/[nA]
-           "f_J_external" : float, # factor with which the external weights are
-                                   # multiplied 
+           "JE": float, # excitatory weight [µS]/[nA]
+           "f_J_external": float, # factor with which the external weights are
+                                   # multiplied
 
-           "rate" : float, # rate with which each noise neuron is assumed to
+           "rate": float, # rate with which each noise neuron is assumed to
                            # fire on average (only used for initial calibration)
 
-           "seed" : int, # random seed
+           "seed": int, # random seed
         }
 
     data_attribute_defaults = {
-            "f_J_external" : 1.,
-            "seed" : 424242,
+            "f_J_external": 1.,
+            "seed": 424242,
         }
 
     @property
@@ -585,7 +584,7 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
         else:
             return self.g * self.JE\
                 * params.tau_syn_E\
-                / params.tau_syn_I 
+                / params.tau_syn_I
 
     @property
     def num_exc(self):
@@ -642,14 +641,14 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
             Return paramters needed for calculating the theoretical membrane
             distribution.
         """
-        rate_exc = self.rate * self.epsilon * self.num_exc
-        rate_inh = self.rate * self.epsilon * self.num_inh
+        rate_exc = self.rate * self.epsilon_external * self.num_exc
+        rate_inh = self.rate * self.epsilon_external * self.num_inh
 
         return {
-            "rates_exc" : np.array([rate_exc]),
-            "rates_inh" : np.array([rate_inh]),
-            "weights_exc" : np.array([self.JE]),
-            "weights_inh" : np.array([-self.JI]),
+            "rates_exc": np.array([rate_exc]),
+            "rates_inh": np.array([rate_inh]),
+            "weights_exc": np.array([self.JE]),
+            "weights_inh": np.array([-self.JI]),
         }
 
     def create_connect(self, sim, samplers, **kwargs):
@@ -691,8 +690,8 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
 
             if cfg.epsilon > 0.:
                 projections.append({
-                    "internal:" : {
-                        "EE" : sim.Projection(src_exc, src_exc,
+                    "internal:": {
+                        "EE": sim.Projection(src_exc, src_exc,
                             connector=sim.FixedNumberPreConnector(
                                 n=cfg.indegree_exc,
                                 allow_self_connections=False,
@@ -702,7 +701,7 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
                                 weight=cfg.JE, delay=cfg.delay_internal),
                             receptor_type="excitatory"),
 
-                        "EI" : sim.Projection(src_exc, src_inh,
+                        "EI": sim.Projection(src_exc, src_inh,
                             connector=sim.FixedNumberPreConnector(
                                 n=cfg.indegree_exc,
                                 allow_self_connections=False,
@@ -712,7 +711,7 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
                                 weight=cfg.JE, delay=cfg.delay_internal),
                             receptor_type="excitatory"),
 
-                        "IE" : sim.Projection(src_inh, src_exc,
+                        "IE": sim.Projection(src_inh, src_exc,
                             connector=sim.FixedNumberPreConnector(
                                 n=cfg.indegree_inh,
                                 allow_self_connections=False,
@@ -723,7 +722,7 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
                                 delay=cfg.delay_internal),
                             receptor_type="inhibitory"),
 
-                        "II" : sim.Projection(src_inh, src_inh,
+                        "II": sim.Projection(src_inh, src_inh,
                             connector=sim.FixedNumberPreConnector(
                                 n=cfg.indegree_inh,
                                 allow_self_connections=False,
@@ -753,7 +752,7 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
                     cfg.indegree_external_exc, JE,
                     cfg.indegree_external_inh, JI))
                 projections[-1]["external"].append({
-                    "E" : sim.Projection(src_exc, pop,
+                    "E": sim.Projection(src_exc, pop,
                             connector=sim.FixedNumberPreConnector(
                                 n=cfg.indegree_external_exc,
                                 allow_self_connections=False,
@@ -764,7 +763,7 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
                                 delay=cfg.delay_external),
                             receptor_type="excitatory"),
 
-                    "I" : sim.Projection(src_inh, pop,
+                    "I": sim.Projection(src_inh, pop,
                             connector=sim.FixedNumberPreConnector(
                                 n=cfg.indegree_external_inh,
                                 allow_self_connections=False,
@@ -791,3 +790,199 @@ class NoiseNetworkSourceConfiguration(SourceConfiguration):
                 burn_in_time=burn_in_time,
                 sim_setup_kwargs=sim_setup_kwargs)
 
+
+class PoissonPoolSourceConfiguration(SourceConfiguration):
+    """
+        A pool of Poisson sources with fixed rate.
+
+        The main use is to compare the sampling performance of a Boltzmann
+        machine supplied with Noise network and Poisson pool. The former
+        actively decorralates the input spike trains received by every sampling
+        unit, the latter doesn't.
+
+        Each neuron in the Boltzmann machine will be connected to a subset of
+        Poisson sources. This will lead to shared input correlations in the
+        noise input to different samplers.
+    """
+
+    # if the specified source model is not available, this will be used
+    fallback_nest_source_model = "poisson_generator"
+    fallback_nest_source_model_kwargs = {}
+
+    data_attribute_types = {
+            # network attributes
+           "N": int, # number of neurons in noise network
+           "gamma": float, # percentage of excitatory neurons (in [0,1])
+
+           "nest_source_model": str,
+           "nest_source_model_kwargs": dict,
+
+           "epsilon_external": float, # connectivity to samplers
+
+           # synapse parameters
+           "delay_external": float, # to samplers
+
+           "g": float, # relative weight of inhibitory synapses
+                       # g= (J_I * tau_I * |V_rest-V_rev_I|)
+                       #   /(J_E * tau_E * |V_rest-V_rev_E|)
+
+           "JE": float, # excitatory weight [µS]/[nA] from Poisson Pool to the
+                        # functional network
+
+           "rate": float, # rate with which each poisson source spikes
+
+           "seed": int, # random seed
+        }
+
+    data_attribute_defaults = {
+            "seed": 424242,
+
+           "nest_source_model": "poisson_generator",
+           "nest_source_model_kwargs": {},
+        }
+
+    @property
+    def JI(self):
+        return self.g * self.JE
+
+    @property
+    def num_exc(self):
+        return int(np.around(self.N * self.gamma))
+
+    @property
+    def num_inh(self):
+        return self.N - self.num_exc
+
+    @property
+    def indegree_external_exc(self):
+        """
+            Number of (excitatory) presynaptic partners each sampler receives
+            input from.
+        """
+        return int(np.around(self.num_exc * self.epsilon_external))
+
+    @property
+    def indegree_external_inh(self):
+        """
+            Number of (inhibitory) presynaptic partners each sampler receives
+            input from.
+        """
+        return int(np.around(self.num_inh * self.epsilon_external))
+
+    def get_JI(self, target_pop):
+        """
+            Returns the target inhibitory weight based on whether the target is
+            conductance (positive weight) or current (negative weight) based.
+        """
+        if target_pop.conductance_based:
+            return self.JI
+        else:
+            return -self.JI
+
+    def get_distribution_parameters(self):
+        """
+            Return paramters needed for calculating the theoretical membrane
+            distribution.
+        """
+        rate_exc = self.rate * self.epsilon_external * self.num_exc
+        rate_inh = self.rate * self.epsilon_external * self.num_inh
+
+        return {
+            "rates_exc": np.array([rate_exc]),
+            "rates_inh": np.array([rate_inh]),
+            "weights_exc": np.array([self.JE]),
+            "weights_inh": np.array([-self.JI]),
+        }
+
+    def create_connect(self, sim, samplers, **kwargs):
+        """
+            If samplers is None, only the noise network is created.
+        """
+        # we need to distinguish three cases:
+        # whether we are connecting to a regular population (calibration etc)
+        # or to a list of samplers that a) have the same rates or b) have
+        # different rates
+        assert hasattr(sim, "nest"), "Only nest compatible!"
+        nest = sim.nest
+
+        if isinstance(samplers, sim.Population) or samplers is None:
+            sampler_cfgs = [(samplers, self)]
+        else:
+            sampler_cfgs = ((list(cfg_samplers), cfg) for cfg, cfg_samplers
+                in it.groupby(samplers, lambda s: s.source_config))
+
+        sources = []
+        projections = []
+
+        for samplers, cfg in sampler_cfgs:
+            log.info(
+                "Creating poisson network of size {} to supply samplers.".format(
+                    cfg.N))
+
+            if self.nest_source_model in nest.Models():
+                model_name = self.nest_source_model
+                model_kwargs = self.nest_source_model_kwargs
+            else:
+                log.warn("{} not available in nest, falling back to: {}".format(
+                    self.nest_source_model, self.fallback_nest_source_model
+                    ))
+                model_name = self.fallback_nest_source_model
+                model_kwargs = self.fallback_nest_source_model_kwargs
+
+            model_kwargs["rate"] = self.rate
+
+            gid_generator = nest.Create(model_name, n=1, params=model_kwargs)
+            gid_parrots = nest.Create("parrot_neuron", n=self.N)
+
+            sources.append({
+                "generator": gid_generator,
+                "parrots": gid_parrots
+            })
+
+            nest.Connect(gid_generator, gid_parrots, "all_to_all")
+
+            gid_exc = gid_parrots[:cfg.num_exc]
+            gid_inh = gid_parrots[-cfg.num_inh:]
+
+            if samplers is None:
+                log.warn("No samplers supplied, only created noise network.")
+                continue
+
+            pops = get_population_from_samplers(sim, samplers)
+
+            if isinstance(pops, sim.Population):
+                pops = [pops]
+
+            # we dont need to get the connections from nest, so we leave it
+            # empty
+            projections.append({})
+
+            for pop in pops:
+                log.info("Noise network: {} exc src @ {} / {} inh @ {}".format(
+                    cfg.indegree_external_exc, cfg.JE,
+                    cfg.indegree_external_inh, cfg.JI))
+
+                gids = pop.all_cells.tolist()
+                nest.Connect(gid_exc, gids, conn_spec={
+                    "rule": "fixed_indegree",
+                    "indegree": self.indegree_external_exc,
+                    "autapses": False,
+                    "multapses": False,
+                }, syn_spec={
+                    "model": "static_synapse",
+                    "weight": weight_pynn_to_nest(self.JE),
+                    "delay": self.delay_external,
+                })
+
+                nest.Connect(gid_inh, gids, conn_spec={
+                    "rule": "fixed_indegree",
+                    "indegree": self.indegree_external_inh,
+                    "autapses": False,
+                    "multapses": False,
+                }, syn_spec={
+                    "model": "static_synapse",
+                    "weight": weight_pynn_to_nest(-self.JI),
+                    "delay": self.delay_external,
+                })
+
+        return sources, projections

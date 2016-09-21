@@ -157,17 +157,17 @@ class NativeNestMixin(object):
         if self.translations is None:
             return dikt
 
-        self._ensure_translations_from_pynn()
+        translations = self.get_translations_pynn()
 
         dikt = copy.deepcopy(dikt)
 
         translated = {}
 
         for k, v in dikt.iteritems():
-            if k in self.translations:
+            if k in translations:
                 # if there is a translation, apply it
                 # (taken in accordance to PyNN source)
-                t = self.translations[k]
+                t = translations[k]
                 f = t["forward_transform"]
                 if callable(f):
                     t_value = f(**dikt)
@@ -182,7 +182,6 @@ class NativeNestMixin(object):
 
         return translated
 
-
     def get_nest_parameters(self):
         dikt = self.get_dict()
         nest_params = {k: dikt[k] for k in self.nest_only_attributes}
@@ -191,21 +190,24 @@ class NativeNestMixin(object):
     def get_pynn_model_object(self, sim):
         celltype = sim.native_cell_type(self.nest_model)
 
-        self._ensure_translations_from_pynn()
+        translations = self.get_translations_pynn()
 
-        if self.translations is not None:
-            celltype.translations = copy.deepcopy(self.translations)
+        if translations is not None:
+            celltype.translations = copy.deepcopy(translations)
 
         return celltype
 
-    def _ensure_translations_from_pynn(self):
+    def get_translations_pynn(self):
         if isinstance(self.translations, six.string_types):
             # if translations is a string we copy the translation from the
             # specified standardmodel
             # (we have to do this in order to avoid importing PyNN until we
             # actually create any objects)
             import pyNN.nest as sim
-            self.translations = getattr(sim, self.translations).translations
+            return getattr(sim, self.translations).translations
+
+        else:
+            return self.translations
 
 
 class RandomRefractoryMixin(NativeNestMixin):

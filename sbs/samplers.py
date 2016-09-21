@@ -42,10 +42,12 @@ class LIFsampler(object):
             self.calibration = sampler_config.calibration
             self.neuron_parameters = sampler_config.neuron_parameters
             self.source_config = sampler_config.source_config
+            self.tso_parameters = sampler_config.tso_parameters
 
         elif isinstance(sampler_config, db.NeuronParameters):
             self.neuron_parameters = sampler_config
             self.calibration = None
+            self.tso_parameters = None
 
         else:
             raise Exception("Invalid sampler_config supplied.")
@@ -148,7 +150,7 @@ class LIFsampler(object):
         """
             Can only be set by modifying the calibration.
         """
-        if value is None:
+        if value is None and self.is_calibrated:
             return self.calibration.source_config
         else:
             return value
@@ -252,7 +254,7 @@ class LIFsampler(object):
                 - dV
         """
         if calibration is None:
-            assert self.calibration is not None
+            assert self.is_calibrated
             calibration = self.calibration
 
         calibration.sim_name = self.sim_name
@@ -336,6 +338,7 @@ class LIFsampler(object):
             Returns a dictionary of `np.array`s with calibration source configuration
                 rates_exc, rates_inh, weights_exc, weights_inh
         """
+        assert self.is_calibrated, "No calibration supplied!"
         return self.calibration.source_config.get_distribution_parameters()
 
     def get_vmem_dist_theo(self):
@@ -456,8 +459,32 @@ class LIFsampler(object):
     def write_config(self, filename):
         if not self.silent:
             log.info("Writing sampler configuration…")
-        db.SamplerConfiguration(calibration=self.calibration,
-            neuron_parameters=self.neuron_parameters).write(filename)
+
+        # do not write source config if it is the same as the calibrated one
+        if self.source_config is self.calibration.source_config:
+            src_cfg_to_write = None
+        else:
+            src_cfg_to_write = self.source_config
+
+        db.SamplerConfiguration(
+            calibration=self.calibration,
+            source_config=src_cfg_to_write,
+            neuron_parameters=self.neuron_parameters,
+            tso_parameters=self.tso_parameters).write(filename)
+
+    def clear_source_config(self):
+        """
+            Clear source configuration from sampler (useful for calibrating the
+            same sampler configuration with a different calibration).
+        """
+        if self.calibration is not None:
+            cal_src_cfg = self.calibration.source_config
+        else:
+            cal_src_cfg = None
+        self.calibration.source_config = None
+        self.source_config = None
+        if cal_src_cfg is not None:
+            self.calibration.source_config = cal_src_cfg
 
 
     ##################

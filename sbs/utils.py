@@ -31,6 +31,7 @@ __all__ = [
     "check_list_array",
     "erfm",
     "fill_diagonal",
+    "filter_dict",
     "format_time",
     "gauss",
     "get_eta",
@@ -40,13 +41,12 @@ __all__ = [
     "get_sha1",
     "get_time_tuple",
     "load_pickle",
+    "nest_change_poisson_rate"
     "nest_copy_model",
     "nest_key_connections",
     "save_pickle",
     "sigmoid",
     "sigmoid_trans",
-    "ensure_divs"
-    "nest_change_poisson_rate"
 ]
 
 def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
@@ -101,6 +101,7 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
         + np.dot(rates_inh, S_inh**2) * var_tau_i
 
     return v_eff, np.sqrt(var), g_tot, tau_eff
+
 
 def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
         e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm,
@@ -214,6 +215,7 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
                 - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I))
 
     return v_eff, float(np.sqrt(var)), g_tot, tau_eff
+
 
 def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
         v_rest, tau_syn_E, tau_syn_I, g_l, cm,
@@ -339,14 +341,17 @@ def make_time_closure_writable(timediff):
         return int(np.floor(t/s))
     return sub
 
+
 def get_time_tuple(timediff):
     return TimeTuple(*map(make_time_closure_writable(timediff), TIME_DELTAS))
+
 
 def format_time(timediff):
     fmtd = get_time_tuple(timediff)
     return " ".join(
             ("{0}{1}".format(getattr(fmtd, s), s) for s in fmtd._fields
                 if getattr(fmtd, s) > 0.))
+
 
 def get_eta(t_start, current, total):
     """
@@ -359,6 +364,7 @@ def get_eta(t_start, current, total):
     else:
         return "N/A"
 
+
 def get_eta_str(t_start, current, total):
     """
         Same as get_eta but returns a preformatted string.
@@ -369,8 +375,10 @@ def get_eta_str(t_start, current, total):
     else:
         return "N/A"
 
+
 def get_elapsed_str(t_start):
     return format_time(time.time() - t_start)
+
 
 def save_pickle(obj, filename, force_extension=False, compresslevel=9):
     """
@@ -386,6 +394,7 @@ def save_pickle(obj, filename, force_extension=False, compresslevel=9):
 
     with gzip.open(filename, "wb", compresslevel=compresslevel) as f:
         pickle.dump(obj, f, protocol=-1)
+
 
 def load_pickle(filename, force_extension=False):
     """
@@ -404,6 +413,7 @@ def load_pickle(filename, force_extension=False):
     with file_opener(filename) as f:
         return pickle.load(f)
 
+
 def get_ordered_spike_idx(spiketrains):
     """
         Take spike trains and return a (num_spikes,) record array that contains
@@ -413,7 +423,7 @@ def get_ordered_spike_idx(spiketrains):
     num_spikes = sum((len(st) for st in spiketrains))
     spikes = np.zeros((num_spikes,), dtype=[("id", int), ("t", float)])
 
-    current = 0 
+    current = 0
 
     for i,st in enumerate(spiketrains):
         if log.getEffectiveLevel() <= logging.DEBUG:
@@ -428,8 +438,10 @@ def get_ordered_spike_idx(spiketrains):
 
     return sorted_spikes
 
+
 def check_list_array(obj):
     return isinstance(obj, c.Sequence) or isinstance(obj, np.ndarray)
+
 
 def dkl(p, q):
     """
@@ -439,6 +451,7 @@ def dkl(p, q):
     p = p[idx]
     q = q[idx]
     return np.sum(p * np.log(p/q))
+
 
 def dkl_sum_marginals(ps, qs):
     """
@@ -453,11 +466,6 @@ def dkl_sum_marginals(ps, qs):
         dkl += p * np.log(p/q) + (1. - p) * np.log((1.-p)/(1.-q))
     return dkl
 
-def ensure_divs(count, mod):
-    if count <= mod:
-        return mod
-    else:
-        return count - count % mod
 
 def nest_copy_model(base_model, pynn_compatible=True):
     """
@@ -477,6 +485,7 @@ def nest_copy_model(base_model, pynn_compatible=True):
         # make labelled version available to pyNN
         nest.CopyModel(base_model + "_lbl", model_name + "_lbl")
     return model_name
+
 
 def nest_key_connections(conn):
     """
@@ -501,6 +510,7 @@ def nest_key_connections(conn):
     # source-id, target-id, receptor-port
     return conn[0], conn[1], conn[4]
 
+
 def nest_change_poisson_rate(bm_net, new_rate):
     """
         Convenience function:
@@ -516,4 +526,12 @@ def nest_change_poisson_rate(bm_net, new_rate):
     import nest
     nest.SetStatus(gid_generators.tolist(), {"rate": new_rate})
 
+
+def filter_dict(d, f):
+    """
+        Filter dictionary d based on function f that takes two arguments
+        (key and value) and returns a bool to indicate if the key value
+        pair should be kept.
+    """
+    return {k: v for k, v in d.iteritems() if f(k, v)}
 

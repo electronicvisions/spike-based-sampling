@@ -29,6 +29,14 @@ log = sbs.log
 sim_name = "pyNN.nest"
 # sim_name = "pyNN.neuron"
 
+class TestError(Exception):
+    pass
+
+@sbs.comm.RunInSubprocess
+def raise_test_error():
+    raise TestError
+
+
 # some example neuron parameters
 neuron_params = {
         "cm"         : .2,
@@ -427,3 +435,7 @@ class TestBasics(unittest.TestCase):
         bm.plot_dist_joint(save=True)
 
 
+    def test_runinsubprocess_clientfail(self):
+
+        with self.assertRaises(IOError):
+            raise_test_error()

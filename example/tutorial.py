@@ -168,7 +168,7 @@ def sample_network():
 
     # Networks can be saved outside of the database.
     filename = "tutorial-network.pkl.gz"
-    duration = 1e5
+    duration = 1e6
 
     # Try to load the network from file. This function returns None if no
     # network could be loaded.

@@ -377,7 +377,14 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
 
     pop = pops[0]
 
-    pop.record("spikes")
+    sim_is_nest = hasattr(sim, "nest")
+
+    if sim_is_nest:
+        gids = pop.all_cells.tolist()
+        spike_detectors = sim.nest.Create("spike_detector", len(gids))
+        sim.nest.Connect(gids, spike_detectors, "one_to_one")
+    else:
+        pop.record("spikes")
 
     callbacks = get_callbacks(sim, {
             "duration" : duration,
@@ -390,12 +397,20 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
         sim.run(burn_in_time)
         eta_from_burnin(t_start, burn_in_time, duration)
 
+        if sim_is_nest:
+            # we do not want to count events that occured during burn-in
+            sim.nest.SetStatus(spike_detectors, {"n_events" : 0})
+
     log.info("Starting data gathering run.")
     sim.run(duration, callbacks=callbacks)
 
-    spiketrains = pop.get_data("spikes").segments[0].spiketrains
-    num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
-            dtype=int)
+    if sim_is_nest:
+        num_spikes = sim.nest.GetStatus(spike_detectors, "n_events")
+        num_spikes = np.array(num_spikes, dtype=int)
+    else:
+        spiketrains = pop.get_data("spikes").segments[0].spiketrains
+        num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
+                dtype=int)
 
     if log.getEffectiveLevel() <= logging.DEBUG:
         log.debug(pf(spiketrains))
@@ -416,6 +431,8 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
         },
     }
     sim.end()
+
+    log.info("Measured the following rates: " + pf(rates))
 
     return rates
 
