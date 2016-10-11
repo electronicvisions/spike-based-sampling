@@ -46,6 +46,7 @@ __all__ = [
     "sigmoid",
     "sigmoid_trans",
     "ensure_divs"
+    "nest_change_poisson_rate"
 ]
 
 def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
@@ -499,4 +500,20 @@ def nest_key_connections(conn):
     """
     # source-id, target-id, receptor-port
     return conn[0], conn[1], conn[4]
+
+def nest_change_poisson_rate(bm_net, new_rate):
+    """
+        Convenience function:
+        Changes the global rate of the BM `bm_net` to `new_rate`.
+    """
+    # NOTE: This is a dirty dirty hack ...
+    log.info("Changing global Poisson rate to: {} Hz".format(new_rate))
+    gid_generators = bm_net._pynn_sources[0][0]["generators"]
+
+    assert len(gid_generators) == 1, "There is more than one Poisson generator currently active! " \
+            "We do NOT want to hack that much!"
+
+    import nest
+    nest.SetStatus(gid_generators.tolist(), {"rate": new_rate})
+
 
