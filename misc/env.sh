@@ -21,6 +21,7 @@ module load matplotlib/1.4.3
 module load boost/1.57.0
 module load nest-semf/1.1.0
 module load cython/0.24.0
+module load h5py/2.6.0
 
 echo "Now loaded modules: "
 module list
