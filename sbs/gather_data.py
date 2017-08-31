@@ -410,10 +410,11 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
     else:
         spiketrains = pop.get_data("spikes").segments[0].spiketrains
         num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
-                dtype=int)
+                               dtype=int)
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.debug(pf(spiketrains))
 
     if log.getEffectiveLevel() <= logging.DEBUG:
-        log.debug(pf(spiketrains))
         log.debug(pf(num_spikes))
 
     rates = {

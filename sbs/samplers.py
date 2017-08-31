@@ -10,8 +10,9 @@ from . import buildingblocks as bb
 from . import cutils
 from . import cells
 
-import itertools as it
+import logging
 import numpy as np
+from pprint import pformat as pf
 
 __all__ = ["LIFsampler"]
 
@@ -739,7 +740,7 @@ class LIFsampler(object):
         dbc.mean, dbc.std, dbc.g_tot, dbc.tau_eff = self.get_vmem_dist_theo()
         if not self.silent:
             log.info(u"Theoretical Vmem distribution: {:.3f}±{:.3f}mV".format(
-            dbc.mean, dbc.std))
+                dbc.mean, dbc.std))
 
     def _ensure_model_is_supported(self, pynn_neuron_model=None):
         if pynn_neuron_model is None:
@@ -752,15 +753,20 @@ class LIFsampler(object):
             V_rest_min=-80., V_rest_max=-20.,
             dV=0.2,
             lower_bound=0.05, upper_bound=0.95,
-            duration=1000., #  time spent when scanning for the sigmoid
+            duration=1000.,  # time spent when scanning for the sigmoid
             max_search_steps=100,
             min_num_points=10,
         )
-        for k in ["sim_name", "sim_setup_kwargs", "burn_in_time", "dt",
-                "source_config"]:
+        for k in [
+                "sim_name",
+                "sim_setup_kwargs",
+                "burn_in_time",
+                "dt",
+                "source_config",
+                ]:
             setattr(pre_calib, k, getattr(calibration, k))
 
-        for k,v in pre_calibration_parameters.iteritems():
+        for k, v in pre_calibration_parameters.iteritems():
             setattr(pre_calib, k, v)
 
         orig_pre_calib = pre_calib.copy()
@@ -774,7 +780,8 @@ class LIFsampler(object):
                 neuron_parameters=self.neuron_parameters,
                 calibration=pre_calib)
 
-        # by importing here we avoid importing networking stuff until we have to
+        # by importing here we avoid importing networking stuff until we have
+        # to
         from .gather_data import gather_calibration_data
 
         V_range = pre_calib.V_rest_max - pre_calib.V_rest_min
@@ -782,33 +789,41 @@ class LIFsampler(object):
         search_steps = 0
         while search_steps < pre_calib.max_search_steps:
             if not upper_bound_found:
-                samples_p_on.append(gather_calibration_data(pre_sampler_config))
+                samples_p_on.append(
+                        gather_calibration_data(pre_sampler_config))
                 samples_v_rest.append(pre_calib.get_samples_v_rest())
 
             else:
-                samples_p_on.insert(0, gather_calibration_data(pre_sampler_config))
+                samples_p_on.insert(
+                        0, gather_calibration_data(pre_sampler_config))
                 samples_v_rest.insert(0, pre_calib.get_samples_v_rest())
 
-            upper_bound_found = any(((spon>pre_calib.upper_bound).any()
-                for spon in reversed(samples_p_on)))
+            upper_bound_found = any(
+                ((spon > pre_calib.upper_bound).any()
+                    for spon in reversed(samples_p_on)))
 
-            lower_bound_found = any(((spon<pre_calib.lower_bound).any()
-                for spon in samples_p_on))
+            lower_bound_found = any(
+                ((spon < pre_calib.lower_bound).any()
+                    for spon in samples_p_on))
 
             if upper_bound_found and lower_bound_found:
                 break
 
-            # adjust the next search range and make sure we are scanning nothing
-            # twice
+            # adjust the next search range and make sure we are scanning
+            # nothing twice
             if not upper_bound_found:
-                pre_calib.V_rest_min = max(orig_pre_calib.V_rest_min,
+                pre_calib.V_rest_min = max(
+                        orig_pre_calib.V_rest_min,
                         pre_calib.V_rest_min) + V_range
-                pre_calib.V_rest_max = max(orig_pre_calib.V_rest_max,
+                pre_calib.V_rest_max = max(
+                        orig_pre_calib.V_rest_max,
                         pre_calib.V_rest_max) + V_range
             else:
-                pre_calib.V_rest_min = min(orig_pre_calib.V_rest_min,
+                pre_calib.V_rest_min = min(
+                        orig_pre_calib.V_rest_min,
                         pre_calib.V_rest_min) - V_range
-                pre_calib.V_rest_max = min(orig_pre_calib.V_rest_max,
+                pre_calib.V_rest_max = min(
+                        orig_pre_calib.V_rest_max,
                         pre_calib.V_rest_max) - V_range
 
             search_steps += 1
@@ -816,41 +831,70 @@ class LIFsampler(object):
         samples_p_on = np.hstack(samples_p_on)
         samples_v_rest = np.hstack(samples_v_rest)
 
-        idx = np.where((samples_p_on < pre_calib.upper_bound)
-                * (samples_p_on > pre_calib.lower_bound))[0]
-
-        if len(idx) > 0:
-            idx_low = max(0, idx[0]-1)
-            idx_high = min(samples_p_on.size-1, idx[-1]+1)
-
-        else:
-            idx_high = np.where(samples_p_on > pre_calib.upper_bound)[0][0]
-            idx_low = idx_high - 1
-
-        pre_calib.V_rest_min = samples_v_rest[idx_low]
-        pre_calib.V_rest_max = samples_v_rest[idx_high]
+        num_valid = pre_calib_adjust_v_rest(
+                samples_v_rest, samples_p_on, pre_calib)
 
         # in case of a very steep activation function the previously
         # found voltage interval might be to wide for a sensible fit
-        while len(idx) < pre_calib.min_num_points:
+        while num_valid < pre_calib.min_num_points:
             pre_calib.dV = (pre_calib.V_rest_max - pre_calib.V_rest_min) \
                     / (10.*pre_calib.min_num_points)
             samples_p_on = gather_calibration_data(pre_sampler_config)
             samples_v_rest = pre_calib.get_samples_v_rest()
 
-            idx = np.where((samples_p_on < pre_calib.upper_bound)
-                        * (samples_p_on > pre_calib.lower_bound))[0]
-
-            if len(idx) > 0:
-                idx_low = max(0, idx[0]-1)
-                idx_high = min(samples_p_on.size-1, idx[-1]+1)
-
-            else:
-                idx_high = np.where(samples_p_on > pre_calib.upper_bound)[0][0]
-                idx_low = idx_high - 1
-
-            pre_calib.V_rest_min = samples_v_rest[idx_low]
-            pre_calib.V_rest_max = samples_v_rest[idx_high]
+            num_valid = pre_calib_adjust_v_rest(
+                    samples_v_rest, samples_p_on, pre_calib)
 
         return pre_calib
 
+
+def pre_calib_adjust_v_rest(samples_v_rest, samples_p_on, pre_calib):
+    """
+        Adjusts the v_rest ranges for pre_calib based on the
+        given samples for p_on at resting potentials v_rest.
+
+        NOTE: This method modifies pre_calib in-place!
+
+        Returns the number of valid calibration points!
+    """
+    if log.getEffectiveLevel() <= logging.DEBUG:
+        log.debug("Samples v_rest:\n" + pf(samples_v_rest))
+        log.debug("Samples p_on:\n" + pf(samples_p_on))
+
+    # valid_calibration_points
+    vcp = np.where((samples_p_on < pre_calib.upper_bound)
+                   * (samples_p_on > pre_calib.lower_bound))[0]
+
+    log.info("Found {} valid data points for calibration…".format(len(vcp)))
+
+    # there are points which lie in the valid region for calibration
+    # i.e. on the slope
+    if len(vcp) > 0:
+        vcp_low = max(0, vcp[0]-1)
+        vcp_high = min(samples_p_on.size-1, vcp[-1]+1)
+
+    else:
+        # we currently have no valid points on the slope,
+        # i.e. we need to zoom in on the slope
+        vcp_high = np.where(samples_p_on > pre_calib.upper_bound)[0][0]
+        vcp_low = vcp_high - 1
+
+    if log.getEffectiveLevel() <= logging.DEBUG:
+        log.debug("vcp_low / vcp_high: {}/{}".format(vcp_low, vcp_high))
+
+    pre_calib.V_rest_max = samples_v_rest[vcp_high]
+    # if len(vcp) == 0 and vcp_high == 0 -> vcp_low == -1
+    # -> needs to be taken care of
+    if (vcp_low, vcp_high) == (-1, 0):
+        range_V = pre_calib.V_rest_max - pre_calib.V_rest_min
+        pre_calib.V_rest_min = pre_calib.V_rest_max - range_V
+    else:
+        pre_calib.V_rest_min = samples_v_rest[vcp_low]
+
+    assert pre_calib.V_rest_min < pre_calib.V_rest_max
+
+    if log.getEffectiveLevel() <= logging.DEBUG:
+        log.debug("Adjusted pre-calib:\n" + str(pre_calib))
+
+    # return the number of valid samples
+    return len(vcp)
