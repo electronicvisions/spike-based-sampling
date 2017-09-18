@@ -2,6 +2,7 @@
 # encoding: utf-8
 
 import collections as c
+import functools as ft
 import itertools as it
 import numpy as np
 import logging
@@ -548,18 +549,56 @@ class ThoroughBM(BoltzmannMachineBase):
                     # a parameter of the synapse type -> delete
                     del tso_dikt["weight_rescale"]
 
-                    synapse_type = sim.native_synapse_type(
-                        "avoid_pynn_trying_to_be_smart")(**tso_dikt)
+                    # The following is a workaround to the problem that
+                    # get_synapse_defaults from PyNN.nest does not ignore the
+                    # keys "synapse_model", "has_delay", "requires_symmetric"
+                    # and "weight_recorder" used by tsodyks2 in its Defaults.
+                    # These keys hence falsely enter default_params and cause
+                    # some errors. The following aims to achieve the same as
+                    # the present get_synapse_defaults-method in
+                    # PyNN0-0.8.3/pyNN/nest/synapses.py - however, it would be
+                    # much easier if pyNN.nest had a way of augmenting the
+                    # ignore list.
 
+                    ### First, check if the error is present:
+                    import importlib
+                    synapses = importlib.import_module("pyNN.nest.synapses")
+                    present_defaults = synapses.get_synapse_defaults(
+                            "avoid_pynn_trying_to_be_smart")
+
+                    undesired_keys = [
+                            "synapse_model",
+                            "has_delay",
+                            "requires_symmetric",
+                            "weight_recorder"
+                        ]
+
+                    if any((k in present_defaults for k in undesired_keys)):
+                        log.warn("Patching pyNN to work with nest 2.12.0+, "
+                                 "please consider updating!")
+                        # we need to monkey patch the
+                        # get_synapse_defaults-method
+
+                        original_fct = synapses.get_synapse_defaults
+
+                        @ft.wraps(original_fct)
+                        def patched(modelname):
+                            defaults = original_fct(modelname)
+
+                            return {k: v for k, v in defaults.iteritems()
+                                    if k not in undesired_keys}
+
+                        synapses.get_synapse_defaults = patched
+
+                    synapse_type = sim.native_synapse_type(
+                    "avoid_pynn_trying_to_be_smart")(**tso_dikt)
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)
-
             projections[wt] = sim.Projection(self.population, self.population,
                     synapse_type=synapse_type,
                     connector=sim.FromListConnector(connection_list,
                         column_names=column_names),
                     receptor_type=receptor_type[wt])
-
         return projections
 
 

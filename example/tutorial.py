@@ -31,7 +31,7 @@ import os
 import os.path as osp
 
 import sbs
-sbs.gather_data.set_subprocess_silent(True)
+sbs.gather_data.set_subprocess_silent(False)
 
 log = sbs.log
 
