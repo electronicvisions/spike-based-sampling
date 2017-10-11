@@ -13,3 +13,7 @@ Local install:
 Install to specific <folder>:
     python setup.py install --prefix=<folder>
 
+
+REQUIREMENTS
+###
+Please note that the minimally required NEST version is 2.4.2!
