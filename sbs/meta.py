@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 import numpy as np
-import pylab as p
+import matplotlib.pyplot as plt
 import functools as ft
 #  import peewee as pw
 import logging
@@ -165,7 +165,7 @@ def plot_function(plotname, dpi=300):
             if "show" in kwargs:
                 del kwargs["show"]
             if kwargs.get("fig", None) is None:
-                kwargs["fig"] = p.figure()
+                kwargs["fig"] = plt.figure()
             else:
                 # don't show when user supplies a figure
                 show = False
@@ -206,7 +206,7 @@ def plot_function(plotname, dpi=300):
                 kwargs["fig"].show()
             if save:
                 kwargs["fig"].savefig(local_plotname, dpi=dpi)
-                p.close(kwargs["fig"])
+                plt.close(kwargs["fig"])
 
             return returnval
 
