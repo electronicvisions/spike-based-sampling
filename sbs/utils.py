@@ -45,6 +45,7 @@ __all__ = [
     "nest_copy_model",
     "nest_key_connections",
     "save_pickle",
+    "run_with_eta",
     "sigmoid",
     "sigmoid_trans",
 ]
@@ -367,16 +368,30 @@ def get_eta(t_start, current, total):
 
 def get_eta_str(t_start, current, total):
     """
-        Same as get_eta but returns a preformatted string.
+       Return the estimated time remaining as pre-formatted string.
+
+       `t_start` is the actual time.time() when operations began, `current` is
+       the amount of work already done and `total` is the total amount of work
+       to do.
+
+       Example:
+           t_start = time.time()
+           num_runs = 10
+           for i in xrange(num_runs):
+               # <do some work>
+               get_eta_str(t_start, i, num_runs)
     """
     t_elapsed = time.time() - t_start
-    if current > 0.:
+    if current > 0 and current < total:
         return format_time(t_elapsed / current * (total - current))
     else:
         return "N/A"
 
 
 def get_elapsed_str(t_start):
+    """
+        Return time elapsed from `t_start` as preformatted string.
+    """
     return format_time(time.time() - t_start)
 
 
@@ -534,4 +549,22 @@ def filter_dict(d, f):
         pair should be kept.
     """
     return {k: v for k, v in d.iteritems() if f(k, v)}
+
+
+def run_with_eta(sim, duration, num_steps=20):
+    """
+        Replacement for PyNN.run that seperates a pyNN.run-call of `duration`
+        into `num_steps` smaller segments and gives an indication of the time
+        remaining after each.
+
+        Instead of doing `sim.run(duration)` simply use
+        `run_with_eta(sim, duration)`.
+    """
+    dT = duration / num_steps
+    t_start = time.time()
+    for i in xrange(num_steps):
+        sim.run(dT)
+        log.info("Elapsed: {:<32} ETA: {}".format(
+            get_elapsed_str(t_start),
+            get_eta_str(t_start, i+1, num_steps)))
 
