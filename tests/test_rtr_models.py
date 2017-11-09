@@ -12,8 +12,26 @@ sim_name = "pyNN.nest"
 
 from pprint import pformat as pf
 
-class TestRTRModels(unittest.TestCase):
 
+def check_nest_model_available(model):
+    try:
+        import nest
+        return model in nest.Models()
+    except ImportError:
+        return False
+
+
+def check_rtr_model_cond():
+    return check_nest_model_available("iaf_cond_exp_rtr")
+
+
+def check_rtr_model_curr():
+    return check_nest_model_available("iaf_psc_exp_rtr")
+
+
+class TestRTRModels(unittest.TestCase):
+    @unittest.skipUnless(check_rtr_model_cond(),
+                         "requires RTR models from visionary NEST module")
     def test_calibration_cond(self):
         """
             A sample calibration procedure.
@@ -60,6 +78,8 @@ class TestRTRModels(unittest.TestCase):
         sampler.write_config("test-calibration-cond-rtr")
 
 
+    @unittest.skipUnless(check_rtr_model_cond(),
+                         "requires RTR models from visionary NEST module")
     def test_sample_rtr_cond(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
@@ -150,6 +170,8 @@ class TestRTRModels(unittest.TestCase):
         log.info("DKL joint: {}".format(sbs.utils.dkl(
                 bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
 
+    @unittest.skipUnless(check_rtr_model_curr(),
+                         "requires RTR models from visionary NEST module")
     def test_sample_rtr_curr(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
