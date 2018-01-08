@@ -6,7 +6,10 @@ from Cython.Build import cythonize
 import os
 import os.path as osp
 
-execfile(osp.join(osp.dirname(osp.abspath(__file__)), "sbs", "version.py"))
+versionfile = osp.join(osp.dirname(osp.abspath(__file__)), "sbs", "version.py")
+with open(versionfile) as f:
+    code = compile(f.read(), versionfile, 'exec')
+    exec(code, globals(), locals())
 
 # cutils = Extension("cutils",
         # sources=["sbs/utils/cutils.pyx"])
