@@ -27,6 +27,7 @@ from . import buildingblocks as bb
 from . import utils
 from . import db
 from .samplers import LIFsampler
+from . import pynn_patches
 
 _subprocess_silent = False
 
@@ -280,7 +281,7 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     data = population.get_data("v")
 
     offset = int(dp["burn_in_time"]/dp["dt"])
-    voltage_trace = np.array(data.segments[0].analogsignalarrays[0])[offset:, 0]
+    voltage_trace = np.array(pynn_patches.pynn_get_analogsignals(data.segments[0])[0])[offset:, 0]
     voltage_trace = np.require(voltage_trace, requirements=["C"])
 
     sim.end()

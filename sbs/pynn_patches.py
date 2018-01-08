@@ -5,6 +5,14 @@ from .logcfg import log
 import logging
 import functools as ft
 
+
+def pynn_get_analogsignals(segment):
+    try: # pynn 0.9 syntax
+        return segment.analogsignals
+    except AttributeError:
+        return segment.analogsignalarrays
+
+
 def fix_nest_synapse_defaults(
         synapse_model_to_check="tsodyks2_synapse",
         undesired_keys=[
