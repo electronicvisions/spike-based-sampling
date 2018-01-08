@@ -11,8 +11,6 @@ import copy
 import os
 from pprint import pformat as pf
 
-import pylab as p
-
 from . import buildingblocks as bb
 from . import conversion as conv
 from . import cutils
