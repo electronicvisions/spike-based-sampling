@@ -276,6 +276,11 @@ class LIFsampler(object):
             pmin = 0.0
             pmax = 1.0
 
+            if calibration.V_rest_min is None:
+                raise ValueError("calibration.V_rest_min must not be None!")
+
+            if calibration.V_rest_max is None:
+                raise ValueError("calibration.V_rest_max must not be None!")
 
         log.info("Taking {} samples from {:.3f}mV to {:.3f}mV…".format(
                 calibration.num_samples,
