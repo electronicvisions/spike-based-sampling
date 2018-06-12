@@ -69,9 +69,20 @@ def recv_object(socket):
     return obj
 
 
-# run a function in a subprocess in subprocess with a single decorator
-# the sub function should not have any data dependencies on the rest
-# of the program as a new instance of the program will be created
+class RemoteError(Exception):
+    def __init__(self, e):
+        super(self.__class__, self).__init__()
+        self.original_error_name = e.__class__.__name__
+        self.original_error_message = str(e)
+
+    def __str__(self):
+        return "RemoteError wrapping {}: {}".format(
+            self.original_error_name, self.original_error_message)
+
+
+# run a function in a subprocess with a single decorator the sub function
+# should not have any data dependencies on the rest of the program as a new
+# instance of the program will be created
 #
 # NOTE: This decorator REQUIRES you to encapsulate your python scripts with a
 # check for __main__ in __name__, otherwise code might be executed twice if you
@@ -240,8 +251,7 @@ class RunInSubprocess(object):
                     traceback.format_exception_only(E, e))
                 )))
 
-            raise IOError("Client raised {}, "
-                          "see log for details.".format(E.__name__))
+            raise RemoteError(e)
 
         return retval
 

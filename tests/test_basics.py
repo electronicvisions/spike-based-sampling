@@ -29,9 +29,15 @@ log = sbs.log
 sim_name = "pyNN.nest"
 # sim_name = "pyNN.neuron"
 
+# custom Exception for testing
 class TestError(Exception):
     pass
 
+# RunInSubprocess-wrapped method that is raising an exception that should be
+# propagated to the host in the form of an IOError. Raising the original
+# Exception is problematic if the host-process cannot easily import the module
+# it is defined in - such as PyNest - hence every exception raised in the
+# remote process is converted to a string and wrapped in RemoteError)
 @sbs.comm.RunInSubprocess
 def raise_test_error():
     raise TestError
@@ -142,7 +148,6 @@ class TestBasics(unittest.TestCase):
         # command ("calibration.png" in the current folder):
         sampler.plot_calibration(plotname="calibration_curr", save=True)
 
-
     def test_vmem_dist(self):
         """
             This tutorial shows how to record and plot the distribution of the free
@@ -157,7 +162,6 @@ class TestBasics(unittest.TestCase):
                 burn_in_time=500.)
         sampler.plot_free_vmem(save=True)
         sampler.plot_free_vmem_autocorr(save=True)
-
 
     def test_sample_network(self):
         """
@@ -434,8 +438,22 @@ class TestBasics(unittest.TestCase):
         bm.plot_dist_marginal(save=True)
         bm.plot_dist_joint(save=True)
 
-
     def test_runinsubprocess_clientfail(self):
-
-        with self.assertRaises(IOError):
+        # Simulate an exception raised in a method wrapped with
+        # RunInSuprocess-decorator.
+        #
+        # If DEBUG is set in environment, the RunInSubprocess-decorator is
+        # rendered mute and the original exception will be raised, therefore we
+        # need to check for both RemoteError and TestError (as the tests are
+        # ran with DEBUG set and unset in the corresponding jenkins-job).
+        try:
             raise_test_error()
+        except TestError:
+            # if we are in debug mode the original exception should be raised
+            self.assertTrue("DEBUG" in os.environ)
+            return
+        except sbs.comm.RemoteError as e:
+            self.assertTrue(e.original_error_name == "TestError")
+            return
+        # if we reach this point, there was no exception -> fail the test
+        self.fail("No exception raised.")
