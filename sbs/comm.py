@@ -70,10 +70,28 @@ def recv_object(socket):
 
 
 class RemoteError(Exception):
-    def __init__(self, e):
-        super(self.__class__, self).__init__()
-        self.original_error_name = e.__class__.__name__
+    def wrap_exception(self):
+        """
+            Store information about the current exception within this
+            RemoteError-instance so that they can be send to the host.
+
+            This has to be done in a non-__init__ method because otherwise
+            automatic pickling would fail.
+        """
+        E, e, tb = sys.exc_info()
+
+        self.original_error_name = E.__name__
         self.original_error_message = str(e)
+
+        self.formatted_error = traceback.format_exception_only(E, e)
+        self.formatted_traceback =\
+                traceback.format_list(traceback.extract_tb(tb))
+
+    def write_to_log(self):
+        map(log.error, it.chain(*it.imap(
+            lambda x: string.split(string.strip(x), "\n"),
+            it.chain(self.formatted_traceback, self.formatted_error)
+        )))
 
     def __str__(self):
         return "RemoteError wrapping {}: {}".format(
@@ -146,10 +164,10 @@ class RunInSubprocess(object):
         try:
             return_value = self._func(*args, **kwargs)
         except:
-            E, e, tb = sys.exc_info()
-
+            wrapped = RemoteError()
+            wrapped.wrap_exception()
             # send exception
-            self._send_returnvalue(socket, (E, e, traceback.extract_tb(tb)))
+            self._send_returnvalue(socket, wrapped)
         finally:
             self._send_returnvalue(socket, return_value)
 
@@ -236,22 +254,13 @@ class RunInSubprocess(object):
         log.debug("Receiving return value.")
         retval = recv_object(socket)
 
-        if isinstance(retval, tuple)\
-                and len(retval) == 3\
-                and issubclass(retval[0], BaseException):
-            # an exception has occured in the client, print it
-            E, e, tb_list = retval
+        if isinstance(retval, RemoteError):
 
-            # log each line from traceback and exception seperately to the
-            # error-stream
-            map(log.error, it.chain(*it.imap(
-                lambda x: string.split(string.strip(x), "\n"),
-                it.chain(
-                    traceback.format_list(tb_list),
-                    traceback.format_exception_only(E, e))
-                )))
+            # make sure the remote information is available to the host
+            retval.write_to_log()
 
-            raise RemoteError(e)
+            # reraise the error here so that the userscript fails
+            raise retval
 
         return retval
 
