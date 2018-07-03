@@ -107,7 +107,7 @@ class RunInSubprocess(object):
                     "subprocess!".format(self._func_name))
 
     def __call__(self, *args, **kwargs):
-        if "DEBUG" in os.environ:
+        if "DEBUG" in os.environ or "SBS_NO_SUBPROCESS" in os.environ:
             return self._func(*args, **kwargs)
         else:
             return self._host(*args, **kwargs)

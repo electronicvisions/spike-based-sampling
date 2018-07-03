@@ -450,7 +450,8 @@ class TestBasics(unittest.TestCase):
             raise_test_error()
         except TestError:
             # if we are in debug mode the original exception should be raised
-            self.assertTrue("DEBUG" in os.environ)
+            self.assertTrue("DEBUG" in os.environ
+                or "SBS_NO_SUBPROCESS" in os.environ)
             return
         except sbs.comm.RemoteError as e:
             self.assertTrue(e.original_error_name == "TestError")
