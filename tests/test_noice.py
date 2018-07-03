@@ -12,8 +12,6 @@ sim_name = "pyNN.nest"
 neuron_params = {
         "cm"         : .2,
         "tau_m"      : 1.,
-        "e_rev_E"    : 0.,
-        "e_rev_I"    : -100.,
         "v_thresh"   : -50.,
         "tau_syn_E"  : 10.,
         "v_rest"     : -50.,
@@ -59,7 +57,8 @@ class TestNN(unittest.TestCase):
         """
         # Since we only have the neuron parameters for now, lets create those
         # first
-        nparams = sbs.db.NeuronParametersConductanceExponential(**neuron_params)
+        # TODO: Have tests with conductace-based neurons
+        nparams = sbs.db.NeuronParametersCurrentExponential(**neuron_params)
 
         # Now we create a sampler object. We need to specify what simulator we
         # want along with the neuron model and parameters.
@@ -86,14 +85,14 @@ class TestNN(unittest.TestCase):
         sampler.calibrate(calibration)
 
         # Afterwards, we need to save the calibration.
-        sampler.write_config("test-calibration-nn-cond")
+        sampler.write_config("test-calibration-nn-curr")
 
         # Finally, the calibration function can be plotted using the following
         # command ("calibration.png" in the current folder):
         sampler.plot_calibration(plotname="calibration-nn-cond", save=True)
 
 
-    def test_sample_network_cond(self):
+    def test_sample_network_curr(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
             order to instantiate BMs all needed neuron parameters need to be in the
@@ -114,7 +113,7 @@ class TestNN(unittest.TestCase):
         # is possible.
 
         sampler_config = sbs.db.SamplerConfiguration.load(
-                "test-calibration-nn-cond.json")
+                "test-calibration-nn-curr.json")
 
         bm = sbs.network.ThoroughBM(num_samplers=5,
                 sim_name=sim_name, sampler_config=sampler_config)
@@ -132,7 +131,6 @@ class TestNN(unittest.TestCase):
 
         if bm.sim_name == "pyNN.neuron":
             bm.saturating_synapses_enabled = False
-
 
         bm.gather_spikes(duration=duration, dt=0.1, burn_in_time=500.)
 
@@ -164,4 +162,3 @@ class TestNN(unittest.TestCase):
 
         log.info("DKL joint: {}".format(sbs.utils.dkl(
                 bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
-
