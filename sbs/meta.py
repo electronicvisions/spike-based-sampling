@@ -105,6 +105,7 @@ class DependsOn(object):
         return isinstance(instance, self._class)\
                 and getattr(instance, self.value_name, None) is None
 
+
 def HasDependencies(klass):
     """
         Decorator that is needed for dependency relations to be maintained.
@@ -181,6 +182,14 @@ def plot_function(plotname, dpi=300):
                 del kwargs["plotname"]
             else:
                 local_plotname = plotname
+
+            if kwargs.get("prefix", None) is not None:
+                local_plotname = kwargs["prefix"] + local_plotname
+                del kwargs["prefix"]
+
+            if kwargs.get("suffix", None) is not None:
+                local_plotname = local_plotname + kwargs["suffix"]
+                del kwargs["suffix"]
 
             if "tight_layout" in kwargs:
                 tight_layout = kwargs["tight_layout"]

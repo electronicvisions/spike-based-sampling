@@ -89,7 +89,7 @@ class TestNN(unittest.TestCase):
 
         # Finally, the calibration function can be plotted using the following
         # command ("calibration.png" in the current folder):
-        sampler.plot_calibration(plotname="calibration-nn-cond", save=True)
+        sampler.plot_calibration(prefix="test_noisenet_curr-", save=True)
 
 
     def test_sample_network_curr(self):
@@ -162,3 +162,6 @@ class TestNN(unittest.TestCase):
 
         log.info("DKL joint: {}".format(sbs.utils.dkl(
                 bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
+
+        bm.plot_dist_marginal(prefix="test_noice_curr-", save=True)
+        bm.plot_dist_joint(prefix="test_noice_curr-", save=True)

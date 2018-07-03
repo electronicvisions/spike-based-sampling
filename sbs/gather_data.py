@@ -173,8 +173,11 @@ def gather_calibration_data(
     # sources = bb.create_sources(sim, calibration.source_config, total_duration)
 
     log.info("Setting up {} samplers.".format(len(samples_v_rest)))
-    if log.getEffectiveLevel() <= logging.DEBUG:
-        log.debug("Sampler params: {}".format(pf(neuron_params)))
+
+    log.info("Sampler params:")
+    map(log.info,
+        map(lambda s: "Sampler params (cnt): " + s,
+            sampler_config.to_json().split("\n")))
 
     pop = sampler.create(num_neurons=len(samples_v_rest),
             ignore_calibration=True, duration=total_duration)
@@ -187,7 +190,8 @@ def gather_calibration_data(
     else:
         pop.set(v_rest=samples_v_rest)
 
-    if log.getEffectiveLevel() <= logging.DEBUG:
+    # comment in for debugging
+    if log.getEffectiveLevel() <= logging.DEBUG and False:
         if isinstance(neuron_params, db.NativeNestMixin):
             for i, s in enumerate(pop):
                 # the nest-native parameter for v_rest is E_L

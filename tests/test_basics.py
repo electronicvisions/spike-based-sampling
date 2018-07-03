@@ -103,7 +103,7 @@ class TestBasics(unittest.TestCase):
 
         # Finally, the calibration function can be plotted using the following
         # command ("calibration.png" in the current folder):
-        sampler.plot_calibration(save=True)
+        sampler.plot_calibration(prefix="test_basics_cond-", save=True)
 
     def test_02_calibration_curr(self):
         """
@@ -146,7 +146,7 @@ class TestBasics(unittest.TestCase):
 
         # Finally, the calibration function can be plotted using the following
         # command ("calibration.png" in the current folder):
-        sampler.plot_calibration(plotname="calibration_curr", save=True)
+        sampler.plot_calibration(prefix="test_basics_curr-", save=True)
 
     def test_vmem_dist(self):
         """
@@ -160,8 +160,9 @@ class TestBasics(unittest.TestCase):
 
         sampler.measure_free_vmem_dist(duration=1e4, dt=0.01,
                 burn_in_time=500.)
-        sampler.plot_free_vmem(save=True)
-        sampler.plot_free_vmem_autocorr(save=True)
+        sampler.plot_free_vmem(prefix="test_basics_cond-", save=True)
+        sampler.plot_free_vmem_autocorr(
+                prefix="test_basics_cond-", save=True)
 
     def test_sample_network(self):
         """
@@ -249,8 +250,8 @@ class TestBasics(unittest.TestCase):
         self.assertTrue(dkl_joint > 0)
         self.assertTrue(dkl_joint < 1)
 
-        bm.plot_dist_marginal(save=True)
-        bm.plot_dist_joint(save=True)
+        bm.plot_dist_marginal(prefix="test_basics_cond-", save=True)
+        bm.plot_dist_joint(prefix="test_basics_cond-", save=True)
 
     def test_sample_network_curr(self):
         """
@@ -334,8 +335,8 @@ class TestBasics(unittest.TestCase):
         self.assertTrue(dkl_joint > 0)
         self.assertTrue(dkl_joint < 1)
 
-        bm.plot_dist_marginal(save=True)
-        bm.plot_dist_joint(save=True)
+        bm.plot_dist_marginal(prefix="test_basics_curr-", save=True)
+        bm.plot_dist_joint(prefix="test_basics_curr-", save=True)
 
     def test_sample_network_fixed_spikes(self):
         """
@@ -435,8 +436,8 @@ class TestBasics(unittest.TestCase):
         self.assertTrue(dkl_joint > 0)
         #  self.assertTrue(dkl_joint < 1) # not assured here
 
-        bm.plot_dist_marginal(save=True)
-        bm.plot_dist_joint(save=True)
+        bm.plot_dist_marginal(prefix="test_basics_fixed_spike-", save=True)
+        bm.plot_dist_joint(prefix="test_basics_fixed_spike-", save=True)
 
     def test_runinsubprocess_clientfail(self):
         # Simulate an exception raised in a method wrapped with
