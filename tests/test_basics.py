@@ -158,7 +158,7 @@ class TestBasics(unittest.TestCase):
 
         sampler = sbs.samplers.LIFsampler(sampler_config, sim_name=sim_name)
 
-        sampler.measure_free_vmem_dist(duration=1e5, dt=0.01,
+        sampler.measure_free_vmem_dist(duration=1e4, dt=0.01,
                 burn_in_time=500.)
         sampler.plot_free_vmem(save=True)
         sampler.plot_free_vmem_autocorr(save=True)

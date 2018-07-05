@@ -223,11 +223,12 @@ def autocorr(np.ndarray[np.float64_t, ndim=1] array, uint max_step_diff):
             dtype=np.float64)
 
     cdef uint i
+    cdef uint len_array = len(array)
 
     joints[0] = 1.
 
     for i in range(1,max_step_diff):
-        joints[i] = np.corrcoef(array[:-i], array[i:])[0,1]
+        joints[i] = np.corrcoef(array[:len_array-i], array[i:])[0,1]
 
     return joints
 
