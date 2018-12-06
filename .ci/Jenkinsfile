@@ -1,0 +1,47 @@
+@Library("jenlib") _
+
+try {
+    stage("Cleanup") {
+        runOnSlave(label: "frontend") {
+            cleanWs()
+        }
+    }
+
+    stage("Checkout") {
+        runOnSlave(label: "frontend") {
+            checkout scm
+        }
+    }
+
+    stage("Build") {
+        onSlurmResource(partition: "compile") {
+            inSingularity(app: "visionary-simulation") {
+                jesh "bash -x .ci/stages/build.sh"
+            }
+        }
+    }
+    stage("Analyze log") {
+        runOnSlave(label: "frontend") {
+            warnings canComputeNew: false,
+                     canRunOnFailed: true,
+                     consoleParsers: [[parserName: 'GNU C Compiler 4 (gcc)']],
+                     excludePattern: '.*npy_1_7_deprecated_api.h$',
+                     unstableTotalAll: '0'
+        }
+    }
+    stage("Run tests") {
+        onSlurmResource(partition: "compile") {
+            inSingularity(app: "visionary-dev-tools") {
+                jesh "bash -x .ci/stages/test.sh"
+                archiveArtifacts("tests/*.png")
+                step([$class: 'XUnitBuilder',
+                      thresholds: [[$class: 'FailedThreshold', unstableThreshold:'0']],
+                      tools: [[$class: 'JUnitType', pattern: 'tests/test_results.xml']]])
+            }
+        }
+    }
+} finally {
+    runOnSlave(label: "frontend") {
+        cleanWs()
+    }
+}
