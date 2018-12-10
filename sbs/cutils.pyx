@@ -482,22 +482,3 @@ def generate_states(
         i_sample += 1
 
     return samples
-
-
-cdef _gibbs_sampling(
-            np.ndarray[np.int_t, ndim=2] init_state,
-            np.ndarray[np.int_t, ndim=2] weights,
-            np.ndarray[np.int_t, ndim=1] biases,
-            np.ndarray[np.int_t, ndim=1] selected_idx,
-            bool compute_joint,
-            bool record_z_vectors,
-            uint num_steps,
-            ):
-
-    # NOT FINISHED!
-    cdef uint num_chains = init_state.shape[0]
-    cdef uint num_samplers = init_state.shape[1]
-
-    for i_step in range(num_steps):
-        pass
-
