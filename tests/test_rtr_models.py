@@ -5,12 +5,12 @@
 import unittest
 import numpy as np
 
+from pprint import pformat as pf
+
 import sbs
 log = sbs.log
 
 sim_name = "pyNN.nest"
-
-from pprint import pformat as pf
 
 
 def check_nest_model_available(model):
@@ -50,8 +50,8 @@ class TestRTRModels(unittest.TestCase):
         # set a random distribution
         sampler_config.neuron_parameters.tau_refrac_dist = {
                 "distribution": "uniform",
-                "low" : 20.,
-                "high" : 30.,
+                "low": 20.,
+                "high": 30.,
             }
         sampler_config.neuron_parameters.tau_refrac = 25.
 
@@ -77,14 +77,13 @@ class TestRTRModels(unittest.TestCase):
         # Afterwards, we need to save the calibration.
         sampler.write_config("test-calibration-cond-rtr")
 
-
     @unittest.skipUnless(check_rtr_model_cond(),
                          "requires RTR models from visionary NEST module")
     def test_sample_rtr_cond(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
-            order to instantiate BMs all needed neuron parameters need to be in the
-            database and calibrated.
+            order to instantiate BMs all needed neuron parameters need to be in
+            the database and calibrated.
 
             Does the same thing as sbs.tools.sample_network(...).
         """
@@ -111,12 +110,13 @@ class TestRTRModels(unittest.TestCase):
         # set a random distribution
         sampler_config.neuron_parameters.tau_refrac_dist = {
                 "distribution": "uniform",
-                "low" : 20.,
-                "high" : 30.,
+                "low": 20.,
+                "high": 30.,
             }
 
-        bm = sbs.network.ThoroughBM(num_samplers=5,
-                sim_name=sim_name, sampler_config=sampler_config)
+        bm = sbs.network.ThoroughBM(
+                num_samplers=5, sim_name=sim_name,
+                sampler_config=sampler_config)
 
         # Set random symmetric weights.
         weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -138,7 +138,6 @@ class TestRTRModels(unittest.TestCase):
         if bm.sim_name == "pyNN.neuron":
             bm.saturating_synapses_enabled = False
 
-
         bm.gather_spikes(duration=duration, dt=0.1, burn_in_time=500.)
 
         # Now we just print out some information and plot the distributions.
@@ -157,12 +156,13 @@ class TestRTRModels(unittest.TestCase):
 
         log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-        log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+        log.info("Joint prob (sim):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
         log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-        log.info("Joint prob (theo):\n"\
-                + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+        log.info("Joint prob (theo):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
         log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
             bm.dist_marginal_theo, bm.dist_marginal_sim)))
@@ -175,8 +175,8 @@ class TestRTRModels(unittest.TestCase):
     def test_sample_rtr_curr(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
-            order to instantiate BMs all needed neuron parameters need to be in the
-            database and calibrated.
+            order to instantiate BMs all needed neuron parameters need to be in
+            the database and calibrated.
 
             Does the same thing as sbs.tools.sample_network(...).
         """
@@ -203,12 +203,13 @@ class TestRTRModels(unittest.TestCase):
         # set a random distribution
         sampler_config.neuron_parameters.tau_refrac_dist = {
                 "distribution": "uniform_int",
-                "low" : 200,
-                "high" : 300,
+                "low": 200,
+                "high": 300,
             }
 
-        bm = sbs.network.ThoroughBM(num_samplers=5,
-                sim_name=sim_name, sampler_config=sampler_config)
+        bm = sbs.network.ThoroughBM(
+                num_samplers=5, sim_name=sim_name,
+                sampler_config=sampler_config)
 
         # Set random symmetric weights.
         weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -230,7 +231,6 @@ class TestRTRModels(unittest.TestCase):
         if bm.sim_name == "pyNN.neuron":
             bm.saturating_synapses_enabled = False
 
-
         bm.gather_spikes(duration=duration, dt=0.1, burn_in_time=500.)
 
         # Now we just print out some information and plot the distributions.
@@ -249,16 +249,16 @@ class TestRTRModels(unittest.TestCase):
 
         log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-        log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+        log.info("Joint prob (sim):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
         log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-        log.info("Joint prob (theo):\n"\
-                + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+        log.info("Joint prob (theo):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
         log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
             bm.dist_marginal_theo, bm.dist_marginal_sim)))
 
         log.info("DKL joint: {}".format(sbs.utils.dkl(
                 bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())))
-

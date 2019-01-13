@@ -19,8 +19,8 @@ def join_base_dicts(bases, dct, attribute):
     """
     joined = {}
 
-    for d in ( b.__dict__.get(attribute, {})
-            for b in bases):
+    for d in (b.__dict__.get(attribute, {})
+              for b in bases):
         joined.update(d)
 
     joined.update(dct.get(attribute, {}))
@@ -43,7 +43,8 @@ class MetaData(type):
         cls.register_class(name, klass)
 
         if log.getEffectiveLevel() <= logging.DEBUG:
-            log.debug("Registered {} -> {}".format(name, id(cls.get_class(name))))
+            log.debug("Registered {} -> {}".format(
+                name, id(cls.get_class(name))))
 
         return klass
 
@@ -81,7 +82,8 @@ class Data(object):
         del datadict["_type"]
 
         if log.getEffectiveLevel() <= logging.DEBUG:
-            log.debug(pf({k: id(v) for k,v in cls.__metaclass__.registry.iteritems()}))
+            log.debug(pf({k: id(v) for k, v in
+                      cls.__metaclass__.registry.iteritems()}))
 
         return cls(**datadict)
 
@@ -98,8 +100,8 @@ class Data(object):
             log.warn("Converting {} to non-subclass {}.".format(
                 convert_from.__class__.__name__, cls.__name__))
 
-        attributes = {k: v for k,v in convert_from.to_dict().iteritems()
-                if k in cls.data_attribute_types}
+        attributes = {k: v for k, v in convert_from.to_dict().iteritems()
+                      if k in cls.data_attribute_types}
 
         return cls(**attributes)
 
@@ -141,7 +143,7 @@ class Data(object):
 
         with open(path, "w") as f:
             json.dump(self.to_dict(), f,
-                    ensure_ascii=False, indent=2)
+                      ensure_ascii=False, indent=2)
 
     def to_json(self):
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
@@ -236,4 +238,3 @@ class Data(object):
             return False
 
         return all((d_self[k] == d_other[k] for k in d_self.iterkeys()))
-

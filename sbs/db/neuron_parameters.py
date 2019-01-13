@@ -8,9 +8,10 @@ import copy
 import six
 import itertools as it
 
+
 class NeuronParameters(Data):
     data_attribute_types = {
-        "pynn_model" : str,
+        "pynn_model": str,
     }
 
     @property
@@ -29,8 +30,8 @@ class NeuronParameters(Data):
         del dikt["pynn_model"]
         return dikt
 
-    def get_vmem_distribution_theo(self,
-            source_parameters, adjusted_parameters=None):
+    def get_vmem_distribution_theo(
+            self, source_parameters, adjusted_parameters=None):
         """
             Has to return a tuple of the following:
 
@@ -57,17 +58,17 @@ class NeuronParametersConductanceExponential(NeuronParameters):
     pynn_model = "IF_cond_exp"
 
     data_attribute_types = {
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "e_rev_E"    : float, # mV  Reversal potential for exc inpt
-        "e_rev_I"    : float, # mV  Reversal potential for inh inpt
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
+        "cm":          float,  # nF  Capacity of the membrane
+        "tau_m":       float,  # ms  Membrane time constant
+        "tau_refrac":  float,  # ms  Duration of refractory period
+        "tau_syn_E":   float,  # ms  Decay time of excitatory synaptic curr
+        "tau_syn_I":   float,  # ms  Decay time of inhibitory synaptic curr
+        "e_rev_E":     float,  # mV  Reversal potential for exc inpt
+        "e_rev_I":     float,  # mV  Reversal potential for inh inpt
+        "i_offset":    float,  # nA  Offset current
+        "v_rest":      float,  # mV  Rest potential
+        "v_reset":     float,  # mV  Reset potential after a spike
+        "v_thresh":    float,  # mV  Spike threshold
     }
 
 
@@ -75,17 +76,17 @@ class NeuronParametersConductanceAlpha(NeuronParameters):
     pynn_model = "IF_cond_alpha"
 
     data_attribute_types = {
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "e_rev_E"    : float, # mV  Reversal potential for exc inpt
-        "e_rev_I"    : float, # mV  Reversal potential for inh inpt
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
+        "cm":          float,  # nF  Capacity of the membrane
+        "tau_m":       float,  # ms  Membrane time constant
+        "tau_refrac":  float,  # ms  Duration of refractory period
+        "tau_syn_E":   float,  # ms  Decay time of excitatory synaptic curr
+        "tau_syn_I":   float,  # ms  Decay time of inhibitory synaptic curr
+        "e_rev_E":     float,  # mV  Reversal potential for exc inpt
+        "e_rev_I":     float,  # mV  Reversal potential for inh inpt
+        "i_offset":    float,  # nA  Offset current
+        "v_rest":      float,  # mV  Rest potential
+        "v_reset":     float,  # mV  Reset potential after a spike
+        "v_thresh":    float,  # mV  Spike threshold
     }
 
 
@@ -93,15 +94,15 @@ class NeuronParametersCurrentExponential(NeuronParameters):
     pynn_model = "IF_curr_exp"
 
     data_attribute_types = {
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
+        "cm":          float,  # nF  Capacity of the membrane
+        "tau_m":       float,  # ms  Membrane time constant
+        "tau_refrac":  float,  # ms  Duration of refractory period
+        "tau_syn_E":   float,  # ms  Decay time of excitatory synaptic curr
+        "tau_syn_I":   float,  # ms  Decay time of inhibitory synaptic curr
+        "i_offset":    float,  # nA  Offset current
+        "v_rest":      float,  # mV  Rest potential
+        "v_reset":     float,  # mV  Reset potential after a spike
+        "v_thresh":    float,  # mV  Spike threshold
     }
 
 
@@ -109,24 +110,24 @@ class NeuronParametersCurrentAlpha(NeuronParameters):
     pynn_model = "IF_curr_alpha"
 
     data_attribute_types = {
-        "cm"         : float, # nF  Capacity of the membrane
-        "tau_m"      : float, # ms  Membrane time constant
-        "tau_refrac" : float, # ms  Duration of refractory period
-        "tau_syn_E"  : float, # ms  Decay time of excitatory synaptic curr
-        "tau_syn_I"  : float, # ms  Decay time of inhibitory synaptic curr
-        "i_offset"   : float, # nA  Offset current
-        "v_rest"     : float, # mV  Rest potential
-        "v_reset"    : float, # mV  Reset potential after a spike
-        "v_thresh"   : float, # mV  Spike threshold
+        "cm":          float,  # nF  Capacity of the membrane
+        "tau_m":       float,  # ms  Membrane time constant
+        "tau_refrac":  float,  # ms  Duration of refractory period
+        "tau_syn_E":   float,  # ms  Decay time of excitatory synaptic curr
+        "tau_syn_I":   float,  # ms  Decay time of inhibitory synaptic curr
+        "i_offset":    float,  # nA  Offset current
+        "v_rest":      float,  # mV  Rest potential
+        "v_reset":     float,  # mV  Reset potential after a spike
+        "v_thresh":    float,  # mV  Spike threshold
     }
 
 
 class NativeNestMixin(object):
     """
-        Mixin that marks neuron models that are only compatible with nest. 
+        Mixin that marks neuron models that are only compatible with nest.
     """
     data_attribute_types = {
-        "nest_model" : str,
+        "nest_model": str,
     }
     nest_only_attributes = []
 
@@ -223,7 +224,7 @@ class RandomRefractoryMixin(NativeNestMixin):
         # simulation steps!
         #
         # NOTE: tau_refrac is still used as a mean value for calibration!!
-        "tau_refrac_dist" : dict,
+        "tau_refrac_dist": dict,
         }.iteritems(), NativeNestMixin.data_attribute_types.iteritems()))
 
     def get_nest_parameters(self):
@@ -246,4 +247,3 @@ class CurrentExponentialRandomRefractory(
 
     nest_model = "iaf_psc_exp_rtr"
     translations = "IF_curr_exp"
-

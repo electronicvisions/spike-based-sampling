@@ -5,19 +5,11 @@
     Some tests based on tutorial functions…
 """
 
-import matplotlib as mpl
-# mpl.use( "TkAgg" )
-mpl.use( "Agg" )
-
 import unittest
 
-import copy
-import sys
 import numpy as np
-import multiprocessing as mp
 from pprint import pformat as pf
 import os
-import os.path as osp
 
 import sbs
 sbs.gather_data.set_subprocess_silent(True)
@@ -29,9 +21,11 @@ log = sbs.log
 sim_name = "pyNN.nest"
 # sim_name = "pyNN.neuron"
 
+
 # custom Exception for testing
 class TestError(Exception):
     pass
+
 
 # RunInSubprocess-wrapped method that is raising an exception that should be
 # propagated to the host in the form of an IOError. Raising the original
@@ -45,18 +39,19 @@ def raise_test_error():
 
 # some example neuron parameters
 neuron_params = {
-        "cm"         : .2,
-        "tau_m"      : 1.,
-        "e_rev_E"    : 0.,
-        "e_rev_I"    : -100.,
-        "v_thresh"   : -50.,
-        "tau_syn_E"  : 10.,
-        "v_rest"     : -50.,
-        "tau_syn_I"  : 10.,
-        "v_reset"    : -50.001,
-        "tau_refrac" : 10.,
-        "i_offset"   : 0.,
+        "cm": .2,
+        "tau_m": 1.,
+        "e_rev_E": 0.,
+        "e_rev_I": -100.,
+        "v_thresh": -50.,
+        "tau_syn_E": 10.,
+        "v_rest": -50.,
+        "tau_syn_I": 10.,
+        "v_reset": -50.001,
+        "tau_refrac": 10.,
+        "i_offset": 0.,
     }
+
 
 class TestBasics(unittest.TestCase):
 
@@ -69,7 +64,8 @@ class TestBasics(unittest.TestCase):
         """
         # Since we only have the neuron parameters for now, lets create those
         # first
-        nparams = sbs.db.NeuronParametersConductanceExponential(**neuron_params)
+        nparams = sbs.db.NeuronParametersConductanceExponential(
+                **neuron_params)
 
         # Now we create a sampler object. We need to specify what simulator we
         # want along with the neuron model and parameters.
@@ -109,49 +105,33 @@ class TestBasics(unittest.TestCase):
         """
             A sample calibration procedure.
         """
-        # Since we only have the neuron parameters for now, lets create those first
-        nparams = sbs.db.NeuronParametersCurrentExponential(**{k:v
-                for k,v in neuron_params.iteritems() if not k.startswith("e_rev_")
-            })
+        nparams = sbs.db.NeuronParametersCurrentExponential(
+            **{k: v for k, v in neuron_params.iteritems()
+               if not k.startswith("e_rev_")})
 
-        # Now we create a sampler object. We need to specify what simulator we want
-        # along with the neuron model and parameters.
-        # The sampler accepts both only the neuron parameters or a full sampler
-        # configuration as argument.
         sampler = sbs.samplers.LIFsampler(nparams, sim_name=sim_name)
-
-        # Now onto the actual calibration. For this we only need to specify our
-        # source configuration and how long/with how many samples we want to
-        # calibrate.
 
         source_config = sbs.db.PoissonSourceConfiguration(
                 rates=np.array([1000.] * 2),
                 weights=np.array([-1., 1]) * 0.001,
             )
 
-        # We need to specify the remaining calibration parameters
         calibration = sbs.db.Calibration(
                 duration=1e4, num_samples=150, burn_in_time=500., dt=0.01,
                 source_config=source_config,
                 sim_name=sim_name,
                 sim_setup_kwargs={"spike_precision": "on_grid"})
-        # Do not forget to specify the source configuration!
 
-        # here we could give further kwargs for the pre-calibration phase when the
-        # slope of the sigmoid is searched for
         sampler.calibrate(calibration)
 
-        # Afterwards, we need to save the calibration.
         sampler.write_config("test-calibration-curr")
 
-        # Finally, the calibration function can be plotted using the following
-        # command ("calibration.png" in the current folder):
         sampler.plot_calibration(prefix="test_basics_curr-", save=True)
 
     def test_vmem_dist(self):
         """
-            This tutorial shows how to record and plot the distribution of the free
-            membrane potential.
+            This tutorial shows how to record and plot the distribution of the
+            free membrane potential.
         """
         sampler_config = sbs.db.SamplerConfiguration.load(
                 "test-calibration-cond.json")
@@ -159,7 +139,7 @@ class TestBasics(unittest.TestCase):
         sampler = sbs.samplers.LIFsampler(sampler_config, sim_name=sim_name)
 
         sampler.measure_free_vmem_dist(duration=1e4, dt=0.01,
-                burn_in_time=500.)
+                                       burn_in_time=500.)
         sampler.plot_free_vmem(prefix="test_basics_cond-", save=True)
         sampler.plot_free_vmem_autocorr(
                 prefix="test_basics_cond-", save=True)
@@ -167,8 +147,8 @@ class TestBasics(unittest.TestCase):
     def test_sample_network(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
-            order to instantiate BMs all needed neuron parameters need to be in the
-            database and calibrated.
+            order to instantiate BMs all needed neuron parameters need to be in
+            the database and calibrated.
 
             Does the same thing as sbs.tools.sample_network(...).
         """
@@ -190,8 +170,9 @@ class TestBasics(unittest.TestCase):
         sampler_config = sbs.db.SamplerConfiguration.load(
                 "test-calibration-cond.json")
 
-        bm = sbs.network.ThoroughBM(num_samplers=5,
-                sim_name=sim_name, sampler_config=sampler_config)
+        bm = sbs.network.ThoroughBM(
+                num_samplers=5, sim_name=sim_name,
+                sampler_config=sampler_config)
 
         # Set random symmetric weights.
         weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -211,12 +192,9 @@ class TestBasics(unittest.TestCase):
         if bm.sim_name == "pyNN.neuron":
             bm.saturating_synapses_enabled = False
 
-
         bm.gather_spikes(duration=duration, dt=0.1, burn_in_time=500.)
-        # bm.save(filename)
 
         # Now we just print out some information and plot the distributions.
-
         log.info("Weights (theo):\n" + pf(bm.weights_theo))
         log.info("Biases (theo):\n" + pf(bm.biases_theo))
 
@@ -231,12 +209,13 @@ class TestBasics(unittest.TestCase):
 
         log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-        log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+        log.info("Joint prob (sim):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
         log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-        log.info("Joint prob (theo):\n"\
-                + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+        log.info("Joint prob (theo):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
         dkl_marginal = sbs.utils.dkl_sum_marginals(
             bm.dist_marginal_theo, bm.dist_marginal_sim)
@@ -256,8 +235,8 @@ class TestBasics(unittest.TestCase):
     def test_sample_network_curr(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
-            order to instantiate BMs all needed neuron parameters need to be in the
-            database and calibrated.
+            order to instantiate BMs all needed neuron parameters need to be in
+            the database and calibrated.
 
             Does the same thing as sbs.tools.sample_network(...).
         """
@@ -272,15 +251,12 @@ class TestBasics(unittest.TestCase):
         bm = sbs.network.ThoroughBM.load(filename)
 
         if bm is None:
-            # No network loaded, we need to create it. We need to specify how many
-            # samplers we want and what neuron parameters they should have. Refer
-            # to the documentation for all the different ways this is possible.
-
             sampler_config = sbs.db.SamplerConfiguration.load(
                     "test-calibration-curr.json")
 
-            bm = sbs.network.ThoroughBM(num_samplers=5,
-                    sim_name=sim_name, sampler_config=sampler_config)
+            bm = sbs.network.ThoroughBM(
+                    num_samplers=5, sim_name=sim_name,
+                    sampler_config=sampler_config)
 
             # Set random symmetric weights.
             weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -289,10 +265,6 @@ class TestBasics(unittest.TestCase):
 
             # Set random biases.
             bm.biases_theo = np.random.randn(bm.num_samplers)
-
-            # NOTE: By setting the theoretical weights and biases, the biological
-            # ones automatically get calculated on-demand by accessing
-            # bm.weights_bio and bm.biases_bio
 
             if bm.sim_name == "pyNN.neuron":
                 bm.saturating_synapses_enabled = False
@@ -316,12 +288,13 @@ class TestBasics(unittest.TestCase):
 
         log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-        log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+        log.info("Joint prob (sim):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
         log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-        log.info("Joint prob (theo):\n"\
-                + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+        log.info("Joint prob (theo):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
         dkl_marginal = sbs.utils.dkl_sum_marginals(
             bm.dist_marginal_theo, bm.dist_marginal_sim)
@@ -347,20 +320,13 @@ class TestBasics(unittest.TestCase):
             correspond to the rates of the random sources used to calibrate the
             network!
 
-            Also note that because these are just some fixed spike trains the DKL
-            etc will be horrible in this example (but that is not the point here).
+            Also note that because these are just some fixed spike trains the
+            DKL etc will be horrible in this example (but that is not the point
+            here).
         """
         np.random.seed(42)
 
-        # Networks can be saved outside of the database.
-        filename = "tutorial-network.pkl.gz"
         duration = 1e4
-
-        # Try to load the network from file. This function returns None if no
-        # network could be loaded.
-        # No network loaded, we need to create it. We need to specify how many
-        # samplers we want and what neuron parameters they should have. Refer
-        # to the documentation for all the different ways this is possible.
 
         sampler_config = sbs.db.SamplerConfiguration.load(
                 "test-calibration-cond.json")
@@ -371,15 +337,15 @@ class TestBasics(unittest.TestCase):
         spike_times = np.arange(1., duration, isi)
         num_spikes = spike_times.size
 
-
         sampler_config.source_config = sbs.db.FixedSpikeTrainConfiguration(
                 spike_times=np.r_[spike_times, spike_times+offset],
                 spike_ids=np.array([0] * num_spikes + [1] * num_spikes),
                 weights=sampler_config.calibration.source_config.weights
             )
 
-        bm = sbs.network.ThoroughBM(num_samplers=5,
-                sim_name=sim_name, sampler_config=sampler_config)
+        bm = sbs.network.ThoroughBM(
+                num_samplers=5, sim_name=sim_name,
+                sampler_config=sampler_config)
 
         # Set random symmetric weights.
         weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -417,12 +383,13 @@ class TestBasics(unittest.TestCase):
 
         log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-        log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+        log.info("Joint prob (sim):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
         log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-        log.info("Joint prob (theo):\n"\
-                + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+        log.info("Joint prob (theo):\n" +
+                 pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
         dkl_marginal = sbs.utils.dkl_sum_marginals(
             bm.dist_marginal_theo, bm.dist_marginal_sim)
@@ -451,8 +418,8 @@ class TestBasics(unittest.TestCase):
             raise_test_error()
         except TestError:
             # if we are in debug mode the original exception should be raised
-            self.assertTrue("DEBUG" in os.environ
-                or "SBS_NO_SUBPROCESS" in os.environ)
+            self.assertTrue("DEBUG" in os.environ or
+                            "SBS_NO_SUBPROCESS" in os.environ)
             return
         except sbs.comm.RemoteError as e:
             self.assertTrue(e.original_error_name == "TestError")

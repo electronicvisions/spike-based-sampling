@@ -7,8 +7,8 @@
 
 import os
 import sys
+import importlib
 import os.path as osp
-import functools as ft
 import numpy as np
 import subprocess as sp
 import itertools as it
@@ -20,16 +20,15 @@ sys.path.append(osp.dirname(osp.dirname(osp.abspath(__file__))))
 
 # NOTE: No relative imports here because the file will also be executed as
 #       script.
-from . import comm
-from . import logcfg
-from .logcfg import log
-from . import buildingblocks as bb
-from . import utils
-from . import db
-from .samplers import LIFsampler
-from . import pynn_patches
+from . import comm                  # noqa: E402
+from .logcfg import log             # noqa: E402
+from . import utils                 # noqa: E402
+from . import db                    # noqa: E402
+from .samplers import LIFsampler    # noqa: E402
+from . import pynn_patches          # noqa: E402
 
 _subprocess_silent = False
+
 
 def set_subprocess_silent(silent=False):
     global _subprocess_silent
@@ -37,9 +36,9 @@ def set_subprocess_silent(silent=False):
 
 
 class SendLogLevelMixin(object):
-    def  _send_arguments(self, socket, args, kwargs):
+    def _send_arguments(self, socket, args, kwargs):
         log.debug("Sending loglevel information.")
-        comm.send_object(socket, {log.name : log.getEffectiveLevel()})
+        comm.send_object(socket, {log.name: log.getEffectiveLevel()})
         return super(SendLogLevelMixin, self)._send_arguments(
                 socket, args, kwargs)
 
@@ -64,13 +63,13 @@ class RunInSubprocessWithDatabase(SendLogLevelMixin, comm.RunInSubprocess):
         if _subprocess_silent:
             output = open(os.devnull, 'w')
         return sp.Popen([sys.executable, script_filename],
-                cwd=self._func_dir, stdout=output, stderr=output)
+                        cwd=self._func_dir, stdout=output, stderr=output)
 
     def _send_arguments(self, socket, args, kwargs):
         log.debug("Sending database settings.")
-        comm.send_object(socket, {"current_basename" : db.current_basename})
-        return super(RunInSubprocessWithDatabase, self)\
-                ._send_arguments(socket, args, kwargs)
+        comm.send_object(socket, {"current_basename": db.current_basename})
+        return super(RunInSubprocessWithDatabase, self)._send_arguments(
+                     socket, args, kwargs)
 
     def _recv_arguments(self, socket):
         assert db.current_basename is None
@@ -80,8 +79,7 @@ class RunInSubprocessWithDatabase(SendLogLevelMixin, comm.RunInSubprocess):
         current_basename = db_data["current_basename"]
         db.setup(current_basename)
 
-        return super(RunInSubprocessWithDatabase, self)\
-                ._recv_arguments(socket)
+        return super(RunInSubprocessWithDatabase, self)._recv_arguments(socket)
 
 
 def eta_from_burnin(t_start, burn_in, duration):
@@ -148,14 +146,14 @@ def gather_calibration_data(
     neuron_params = sampler_config.neuron_parameters
 
     sampler = LIFsampler(sampler_config, sim_name=calibration.sim_name,
-            silent=True)
+                         silent=True)
 
     if calibration.sim_setup_kwargs is None:
         sim_setup_kwargs = {}
     else:
         sim_setup_kwargs = calibration.sim_setup_kwargs
 
-    exec("import {} as sim".format(calibration.sim_name))
+    sim = importlib.import_module(calibration.sim_name)
 
     samples_v_rest = calibration.get_samples_v_rest()
 
@@ -170,7 +168,8 @@ def gather_calibration_data(
     sim.setup(timestep=calibration.dt, **sim_setup_kwargs)
 
     # create sources
-    # sources = bb.create_sources(sim, calibration.source_config, total_duration)
+    # sources = bb.create_sources(
+    #         sim, calibration.source_config, total_duration)
 
     log.info("Setting up {} samplers.".format(len(samples_v_rest)))
 
@@ -180,7 +179,7 @@ def gather_calibration_data(
             sampler_config.to_json().split("\n")))
 
     pop = sampler.create(num_neurons=len(samples_v_rest),
-            ignore_calibration=True, duration=total_duration)
+                         ignore_calibration=True, duration=total_duration)
     pop.record("spikes")
     pop.initialize(v=samples_v_rest)
 
@@ -207,8 +206,8 @@ def gather_calibration_data(
             #  pop, duration=total_duration)
 
     callbacks = get_callbacks(sim, {
-            "duration" : calibration.duration,
-            "offset" : burn_in_time,
+            "duration": calibration.duration,
+            "offset": burn_in_time,
         })
 
     # bring samplers into high conductance state
@@ -226,7 +225,7 @@ def gather_calibration_data(
         for i, st in enumerate(spiketrains):
             log.debug("{}: {}".format(i, pf(st)))
     num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
-            dtype=int)
+                          dtype=int)
 
     samples_p_on = num_spikes * neuron_params.tau_refrac / duration
 
@@ -243,7 +242,8 @@ def gather_calibration_data(
 
 
 @comm.RunInSubprocess
-def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
+def gather_free_vmem_trace(
+        distribution_params, sampler, adjusted_v_thresh=50.):
     """
         Records a voltage trace of the free membrane potential of the given
         neuron model with the given parameters.
@@ -253,7 +253,7 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     """
     dp = distribution_params
     log.info("Preparing to take free Vmem distribution")
-    exec("import {} as sim".format(sampler.sim_name))
+    sim = importlib.import_module(sampler.sim_name)
 
     if sampler.calibration.sim_setup_kwargs is None:
         sim_setup_kwargs = {}
@@ -271,8 +271,8 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     population.set(v_thresh=adjusted_v_thresh)
 
     callbacks = get_callbacks(sim, {
-            "duration" : dp["duration"],
-            "offset" : dp["burn_in_time"],
+            "duration": dp["duration"],
+            "offset": dp["burn_in_time"],
         })
     log.info("Burning in samplers for {} ms".format(dp["burn_in_time"]))
     t_start = time.time()
@@ -285,7 +285,9 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
     data = population.get_data("v")
 
     offset = int(dp["burn_in_time"]/dp["dt"])
-    voltage_trace = np.array(pynn_patches.pynn_get_analogsignals(data.segments[0])[0])[offset:, 0]
+    voltage_trace = np.array(
+            pynn_patches.pynn_get_analogsignals(
+                data.segments[0])[0])[offset:, 0]
     voltage_trace = np.require(voltage_trace, requirements=["C"])
 
     sim.end()
@@ -298,7 +300,8 @@ def gather_free_vmem_trace(distribution_params, sampler, adjusted_v_thresh=50.):
 #####################################
 
 @comm.RunInSubprocess
-def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
+def gather_network_spikes(
+        network, duration, dt=0.1, burn_in_time=0.,
         create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
     """
         create_kwargs: Extra parameters for the networks creation routine.
@@ -310,13 +313,14 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
     if sim_setup_kwargs is None:
         sim_setup_kwargs = {}
 
-    exec "import {} as sim".format(network.sim_name) in globals(), locals()
+    sim = importlib.import_module(network.sim_name)
 
     sim.setup(timestep=dt, **sim_setup_kwargs)
 
     if create_kwargs is None:
         create_kwargs = {}
-    population, projections = network.create(duration=duration, **create_kwargs)
+    population, projections = network.create(
+        duration=duration, **create_kwargs)
 
     if isinstance(population, sim.common.BasePopulation):
         population.record("spikes")
@@ -329,10 +333,9 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
             for pop, v in it.izip(population, initial_vmem):
                 pop.initialize(v=v)
 
-
     callbacks = get_callbacks(sim, {
-            "duration" : duration,
-            "offset" : burn_in_time,
+            "duration": duration,
+            "offset": burn_in_time,
         })
 
     t_start = time.time()
@@ -348,8 +351,8 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         spiketrains = population.get_data("spikes").segments[0].spiketrains
     else:
         spiketrains = np.vstack(
-                [pop.get_data("spikes").segments[0].spiketrains[0]
-                for pop in population])
+            [pop.get_data("spikes").segments[0].spiketrains[0]
+             for pop in population])
 
     # we need to ignore the burn in time
     clean_spiketrains = []
@@ -357,22 +360,22 @@ def gather_network_spikes(network, duration, dt=0.1, burn_in_time=0.,
         clean_spiketrains.append(np.array(st[st > burn_in_time])-burn_in_time)
 
     return_data = {
-            "spiketrains" : clean_spiketrains,
-            "duration" : duration,
-            "dt" : dt,
+            "spiketrains": clean_spiketrains,
+            "duration": duration,
+            "dt": dt,
         }
     sim.end()
 
     return return_data
 
+
 @comm.RunInSubprocess
-def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
-        sim_setup_kwargs):
+def nn_measure_firing_rates(
+        nn_cfg, sim_name, duration, burn_in_time, sim_setup_kwargs):
     """
         Measure and return the average firing rates of the noise network.
     """
-    exec("import {} as sim".format(sim_name))
-    from pprint import pprint
+    sim = importlib.import_module(sim_name)
 
     if sim_setup_kwargs is None:
         sim_setup_kwargs = {}
@@ -392,8 +395,8 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
         pop.record("spikes")
 
     callbacks = get_callbacks(sim, {
-            "duration" : duration,
-            "offset" : burn_in_time,
+            "duration": duration,
+            "offset": burn_in_time,
         })
 
     t_start = time.time()
@@ -404,7 +407,7 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
 
         if sim_is_nest:
             # we do not want to count events that occured during burn-in
-            sim.nest.SetStatus(spike_detectors, {"n_events" : 0})
+            sim.nest.SetStatus(spike_detectors, {"n_events": 0})
 
     log.info("Starting data gathering run.")
     sim.run(duration, callbacks=callbacks)
@@ -415,7 +418,7 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
     else:
         spiketrains = pop.get_data("spikes").segments[0].spiketrains
         num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
-                               dtype=int)
+                              dtype=int)
         if log.getEffectiveLevel() <= logging.DEBUG:
             log.debug(pf(spiketrains))
 
@@ -423,17 +426,21 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
         log.debug(pf(num_spikes))
 
     rates = {
-        "all" : {
-            "mean" : num_spikes.mean() * 1000. / duration, # Hz
-            "std" : num_spikes.std() * 1000. / duration,   # Hz
+        "all": {
+            "mean": num_spikes.mean() * 1000. / duration,  # Hz
+            "std": num_spikes.std() * 1000. / duration,    # Hz
         },
-        "exc" : {
-            "mean" : num_spikes[:nn_cfg.num_exc].mean() * 1000. / duration, # Hz
-            "std" : num_spikes[:nn_cfg.num_exc].std() * 1000. / duration,   # Hz
+        "exc": {
+            # Hz
+            "mean": num_spikes[:nn_cfg.num_exc].mean() * 1000. / duration,
+            # Hz
+            "std": num_spikes[:nn_cfg.num_exc].std() * 1000. / duration,
         },
-        "inh" : {
-            "mean" : num_spikes[-nn_cfg.num_inh:].mean() * 1000. / duration, # Hz
-            "std" : num_spikes[-nn_cfg.num_inh:].std() * 1000. / duration,   # Hz
+        "inh": {
+            # Hz
+            "mean": num_spikes[-nn_cfg.num_inh:].mean() * 1000. / duration,
+            # Hz
+            "std": num_spikes[-nn_cfg.num_inh:].std() * 1000. / duration,
         },
     }
     sim.end()
@@ -441,4 +448,3 @@ def nn_measure_firing_rates(nn_cfg, sim_name, duration, burn_in_time,
     log.info("Measured the following rates: " + pf(rates))
 
     return rates
-

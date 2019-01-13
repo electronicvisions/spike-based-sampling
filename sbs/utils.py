@@ -19,8 +19,6 @@ try:
 except ImportError:
     import pickle
 
-from . import cutils
-
 from .logcfg import log
 
 __all__ = [
@@ -35,13 +33,13 @@ __all__ = [
     "format_time",
     "gauss",
     "get_eta",
-    "get_elapsed",
+    "get_elapsed_str",
     "get_ordered_spike_idx",
     "get_random_string",
     "get_sha1",
     "get_time_tuple",
     "load_pickle",
-    "nest_change_poisson_rate"
+    "nest_change_poisson_rate",
     "nest_copy_model",
     "nest_key_connections",
     "save_pickle",
@@ -50,9 +48,11 @@ __all__ = [
     "sigmoid_trans",
 ]
 
-def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
+
+def IF_cond_exp_distribution(
+        rates_exc, rates_inh, weights_exc, weights_inh,
         e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm,
-        **sink): #sink is just to absorb unused parameter names
+        **sink):  # sink is just to absorb unused parameter names
     """
     High Conductance State distribution
 
@@ -76,37 +76,34 @@ def IF_cond_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     g_tot = g_exc + g_inh + g_l
 
     # calculate effective (mean) membrane potential and time constant
-
     tau_eff = cm / g_tot
     v_eff = (e_rev_E * g_exc + e_rev_I * g_inh + v_rest * g_l) / g_tot
 
     log.debug("tau_eff: {:.3f} ms".format(tau_eff))
 
-    ####### calculate variance of membrane potential #######
-
+    # calculate variance of membrane potential
     tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
     tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
 
     S_exc = weights_exc * (e_rev_E - v_eff) * tau_g_exc / tau_eff / g_tot
     S_inh = weights_inh * (e_rev_I - v_eff) * tau_g_inh / tau_eff / g_tot
 
-    var_tau_e = tau_syn_E/2. + tau_eff/2.\
-            - 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E)
+    var_tau_e = (tau_syn_E/2. + tau_eff/2. -
+                 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E))
 
-    var_tau_i = tau_syn_I/2. + tau_eff/2.\
-            - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I)
+    var_tau_i = (tau_syn_I/2. + tau_eff/2. -
+                 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I))
 
-    # log.info("v_tau_e/v_tau_i: {} / {}".format(v_tau_e, v_tau_i))
-
-    var = np.dot(rates_exc, S_exc**2) * var_tau_e\
-        + np.dot(rates_inh, S_inh**2) * var_tau_i
+    var = (np.dot(rates_exc, S_exc**2) * var_tau_e +
+           np.dot(rates_inh, S_inh**2) * var_tau_i)
 
     return v_eff, np.sqrt(var), g_tot, tau_eff
 
 
-def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
+def IF_cond_alpha_distribution(
+        rates_exc, rates_inh, weights_exc, weights_inh,
         e_rev_E, e_rev_I, tau_syn_E, tau_syn_I, g_l, v_rest, cm,
-        **sink): #sink is just to absorb unused parameter names
+        **sink):  # sink is just to absorb unused parameter names
     """
     High Conductance State distribution
 
@@ -136,8 +133,7 @@ def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
 
     log.debug("tau_eff: {:.3f} ms".format(tau_eff))
 
-    ####### calculate variance of membrane potential #######
-
+    # calculate variance of membrane potential
     tau_g_exc = 1. / (1. / tau_syn_E - 1. / tau_eff)
     tau_g_inh = 1. / (1. / tau_syn_I - 1. / tau_eff)
 
@@ -151,20 +147,12 @@ def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     S_exc *= np.exp(1.)
     S_inh *= np.exp(1.)
 
-    # var_tau_e = tau_syn_E/2. + tau_eff/2.\
-            # - 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E)
-
-    # var_tau_i = tau_syn_I/2. + tau_eff/2.\
-            # - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I)
-
-    var_tau_exc = tau_syn_E**3 / 4.\
-            + 2. * tau_g_exc * (tau_syn_E**2 / 4. - tau_s_exc**2)\
-            + tau_g_exc**2 * ((tau_syn_E + tau_eff)/2. - 2*tau_s_exc)
-    var_tau_inh = tau_syn_I**3 / 4.\
-            + 2. * tau_g_inh * (tau_syn_I**2 / 4. - tau_s_inh**2)\
-            + tau_g_inh**2 * ((tau_syn_I + tau_eff)/2. - 2*tau_s_inh)
-
-    # log.info("v_tau_e/v_tau_i: {} / {}".format(v_tau_e, v_tau_i))
+    var_tau_exc = (tau_syn_E**3 / 4. +
+                   2. * tau_g_exc * (tau_syn_E**2 / 4. - tau_s_exc**2) +
+                   tau_g_exc**2 * ((tau_syn_E + tau_eff)/2. - 2*tau_s_exc))
+    var_tau_inh = (tau_syn_I**3 / 4. +
+                   2. * tau_g_inh * (tau_syn_I**2 / 4. - tau_s_inh**2) +
+                   tau_g_inh**2 * ((tau_syn_I + tau_eff)/2. - 2*tau_s_inh))
 
     var = np.dot(rates_exc, S_exc**2) * var_tau_exc\
         + np.dot(rates_inh, S_inh**2) * var_tau_inh
@@ -172,9 +160,10 @@ def IF_cond_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     return v_eff, float(np.sqrt(var)), g_tot, tau_eff
 
 
-def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
+def IF_curr_exp_distribution(
+        rates_exc, rates_inh, weights_exc, weights_inh,
         v_rest, tau_syn_E, tau_syn_I, g_l, cm,
-        **sink): #sink is just to absorb unused parameter names
+        **sink):  # sink is just to absorb unused parameter names
     """
         Vmem distribution
         Unit for rates is Hz!
@@ -208,19 +197,18 @@ def IF_curr_exp_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     S_exc = weights_exc * tau_g_exc / tau_eff / g_tot
     S_inh = weights_inh * tau_g_inh / tau_eff / g_tot
 
-    var = np.dot(rates_exc, S_exc**2)\
-            * (tau_syn_E/2. + tau_eff/2.\
-                - 2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E))\
-        + np.dot(rates_inh, S_inh**2)\
-            * (tau_syn_I/2. + tau_eff/2.\
-                - 2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I))
+    var = (np.dot(rates_exc, S_exc**2) * (tau_syn_E/2. + tau_eff/2. +
+           -2. * tau_eff * tau_syn_E / (tau_eff + tau_syn_E)) +
+           np.dot(rates_inh, S_inh**2) * (tau_syn_I/2. + tau_eff/2. +
+           -2. * tau_eff * tau_syn_I / (tau_eff + tau_syn_I)))
 
     return v_eff, float(np.sqrt(var)), g_tot, tau_eff
 
 
-def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
+def IF_curr_alpha_distribution(
+        rates_exc, rates_inh, weights_exc, weights_inh,
         v_rest, tau_syn_E, tau_syn_I, g_l, cm,
-        **sink): #sink is just to absorb unused parameter names
+        **sink):  # sink is just to absorb unused parameter names
     """
         Vmem distribution
         Unit for rates is Hz!
@@ -258,15 +246,15 @@ def IF_curr_alpha_distribution(rates_exc, rates_inh, weights_exc, weights_inh,
     S_exc = I_exc * tau_g_exc / tau_eff / g_tot
     S_inh = I_inh * tau_g_inh / tau_eff / g_tot
 
-    var_tau_exc = tau_syn_E**3 / 4.\
-            + 2. * tau_g_exc * (tau_syn_E**2 / 4. - tau_s_exc**2)\
-            + tau_g_exc**2 * ((tau_syn_E + tau_eff)/2. - 2*tau_s_exc)
-    var_tau_inh = tau_syn_I**3 / 4.\
-            + 2. * tau_g_inh * (tau_syn_I**2 / 4. - tau_s_inh**2)\
-            + tau_g_inh**2 * ((tau_syn_I + tau_eff)/2. - 2*tau_s_inh)
+    var_tau_exc = (tau_syn_E**3 / 4. +
+                   2. * tau_g_exc * (tau_syn_E**2 / 4. - tau_s_exc**2) +
+                   tau_g_exc**2 * ((tau_syn_E + tau_eff)/2. - 2*tau_s_exc))
+    var_tau_inh = (tau_syn_I**3 / 4. +
+                   2. * tau_g_inh * (tau_syn_I**2 / 4. - tau_s_inh**2) +
+                   tau_g_inh**2 * ((tau_syn_I + tau_eff)/2. - 2 * tau_s_inh))
 
-    var = np.dot(rates_exc, S_exc**2) * var_tau_exc\
-        + np.dot(rates_inh, S_inh**2) * var_tau_inh
+    var = (np.dot(rates_exc, S_exc**2) * var_tau_exc +
+           np.dot(rates_inh, S_inh**2) * var_tau_inh)
 
     return v_eff, float(np.sqrt(var)), g_tot, tau_eff
 
@@ -282,7 +270,7 @@ def sigmoid(x):
 
 
 def sigmoid_trans(x, x_p05, alpha):
-    return 1./(1. + np.exp( -(x-x_p05)/alpha))
+    return 1./(1. + np.exp(-(x-x_p05)/alpha))
 
 
 def gauss(x, mean, sigma):
@@ -332,14 +320,17 @@ TimeTuple = c.namedtuple("duration", "d h m s ms".split())
 # durations in seconds
 TIME_DELTAS = TimeTuple(24*3600, 3600, 60, 1, .001)
 
+
 def make_time_closure_writable(timediff):
     timediff = [timediff]
+
     def sub(s):
         # closures need mutable objects to write to, but
         # numbers in themselves are immutable
         t = timediff[0]
         timediff[0] = np.mod(t, s)
         return int(np.floor(t/s))
+
     return sub
 
 
@@ -440,7 +431,7 @@ def get_ordered_spike_idx(spiketrains):
 
     current = 0
 
-    for i,st in enumerate(spiketrains):
+    for i, st in enumerate(spiketrains):
         if log.getEffectiveLevel() <= logging.DEBUG:
             log.debug("Raw spikes for #{}: {}".format(i, pf(st)))
         spikes["id"][current:current+len(st)] = i
@@ -535,8 +526,9 @@ def nest_change_poisson_rate(bm_net, new_rate):
     log.info("Changing global Poisson rate to: {} Hz".format(new_rate))
     gid_generators = bm_net._pynn_sources[0][0]["generators"]
 
-    assert len(gid_generators) == 1, "There is more than one Poisson generator currently active! " \
-            "We do NOT want to hack that much!"
+    assert len(gid_generators) == 1,\
+        ("There is more than one Poisson generator currently active! "
+         "We do NOT want to hack that much!")
 
     import nest
     nest.SetStatus(gid_generators.tolist(), {"rate": new_rate})
@@ -567,4 +559,3 @@ def run_with_eta(sim, duration, num_steps=20):
         log.info("Elapsed: {:<32} ETA: {}".format(
             get_elapsed_str(t_start),
             get_eta_str(t_start, i+1, num_steps)))
-

@@ -1,19 +1,16 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
-import numpy as np
 import matplotlib.pyplot as plt
 import functools as ft
-#  import peewee as pw
-import logging
 import os.path as osp
+import sys
 
-from . import utils
 from .logcfg import log
 
 # subgroups are the primary keys for the calibration-rows in the database
 # then they have two datasets: v_rest and p_on
-data_storage_filename = None # set from db
+data_storage_filename = None  # set from db
 
 
 _dependency_checked_token = "_depcheck_done_26bslash9"
@@ -127,7 +124,7 @@ def HasDependencies(klass):
 
         assert descriptor is not None, "{} not found".format(name)
         assert isinstance(descriptor, DependsOn),\
-                "{} is no dependency type".format(name)
+            "{} is no dependency type".format(name)
 
         descriptor.wipe(self)
 
@@ -229,10 +226,9 @@ def log_exception(f):
     def wrapped(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except Exception, e:
-            import traceback as tb, sys
+        except Exception as e:
+            import traceback as tb
             log.error(tb.format_tb(sys.exc_info()[2])[0])
             log.error(str(e))
             raise e
     return wrapped
-

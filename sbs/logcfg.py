@@ -5,14 +5,16 @@ import os
 LOGNAME = "SbS"
 LOGFILE = os.path.expanduser("~/." + LOGNAME + ".log")
 log = None
-default_verbose_formatter = logging.Formatter("%(asctime)s %(levelname)s "
+default_verbose_formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s "
         "%(funcName)s (%(filename)s:%(lineno)d): %(message)s",
         datefmt="%y-%m-%d %H:%M:%S")
-default_formatter = logging.Formatter("%(asctime)s %(levelname)s: "
+default_formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s: "
         "%(message)s", datefmt="%y-%m-%d %H:%M:%S")
 
-formatter_in_use = default_formatter # allows switching of the global formatter
-loglevel_in_use = "INFO"               # same for loglevels
+formatter_in_use = default_formatter  # allows switching of global formatter
+loglevel_in_use = "INFO"              # same for loglevels
 
 log = logging.getLogger(LOGNAME)
 log.setLevel(logging.INFO)
@@ -79,12 +81,12 @@ def make_verbose():
     global formatter_in_use
     formatter_in_use = default_verbose_formatter
     verbose_loglevel = "DEBUG"
+    global loglevel_in_use
     loglevel_in_use = verbose_loglevel
     set_loglevel(log, verbose_loglevel)
     for h in log.handlers:
         set_loglevel(h, verbose_loglevel)
         h.setFormatter(default_verbose_formatter)
-
 
 
 if "DEBUG" in os.environ:
@@ -104,6 +106,3 @@ if "DEBUG" in os.environ:
 
 for i in range(3):
     log.debug("-" * 80)
-
-
-

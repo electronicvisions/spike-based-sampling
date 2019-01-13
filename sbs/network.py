@@ -1,17 +1,14 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
-import collections as c
-import functools as ft
+import importlib
 import itertools as it
+import pylab as p
 import numpy as np
 import logging
 import sys
-import copy
 import os
-from pprint import pformat as pf
 
-from . import buildingblocks as bb
 from . import conversion as conv
 from . import cutils
 from . import db
@@ -151,7 +148,7 @@ class BoltzmannMachineBase(object):
             # getter
             return np.array([s.bias_theo for s in self.samplers])
         else:
-            #setter
+            # setter
             if not utils.check_list_array(biases):
                 biases = it.repeat(biases)
 
@@ -184,19 +181,20 @@ class BoltzmannMachineBase(object):
     def v_rests(self):
         return np.array([s.get_v_rest_from_bias() for s in self.samplers])
 
-
     def convert_weights_bio_to_theo(self, weights):
         conv_weights = np.zeros_like(weights)
         # the column index denotes the target neuron, hence we convert there
         for j, sampler in enumerate(self.samplers):
-            conv_weights[:, j] = sampler.convert_weights_bio_to_theo(weights[:, j])
+            conv_weights[:, j] = sampler.convert_weights_bio_to_theo(
+                    weights[:, j])
         return conv_weights
 
     def convert_weights_theo_to_bio(self, weights):
         conv_weights = np.zeros_like(weights)
         # the column index denotes the target neuron, hence we convert there
         for j, sampler in enumerate(self.samplers):
-            conv_weights[:, j] = sampler.convert_weights_theo_to_bio(weights[:, j])
+            conv_weights[:, j] = sampler.convert_weights_theo_to_bio(
+                    weights[:, j])
 
         return conv_weights
 
@@ -208,7 +206,7 @@ class BoltzmannMachineBase(object):
         """
         if self.is_created:
             log.warn("A PyNN object was already created. Its delays will not "
-                    "be modified!")
+                     "be modified!")
         delays = self._check_delays(delays)
         return delays
 
@@ -219,7 +217,8 @@ class BoltzmannMachineBase(object):
 
             Note: Assumes they do not change over the course of simulation!
         """
-        return np.array([s.neuron_parameters.tau_refrac for s in self.samplers])
+        return np.array([s.neuron_parameters.tau_refrac
+                        for s in self.samplers])
 
     @meta.DependsOn()
     def tso_params(self, params=None):
@@ -227,11 +226,16 @@ class BoltzmannMachineBase(object):
             Specify custom TSO parameters.
 
             (Taken from NEST source doctstrings:)
-             U          double - probability of release increment (U1) [0,1], default=0.5
-             u          double - Maximum probability of release (U_se) [0,1], default=0.5
-             x          double - current scaling factor of the weight, default=U
-             tau_rec    double - time constant for depression in ms, default=800 ms
-             tau_fac    double - time constant for facilitation in ms, default=0 (off)
+             U          double - probability of release increment (U1) [0,1],
+                                 default=0.5
+             u          double - Maximum probability of release (U_se) [0,1],
+                                 default=0.5
+             x          double - current scaling factor of the weight,
+                                 default=U
+             tau_rec    double - time constant for depression in ms,
+                                 default=800 ms
+             tau_fac    double - time constant for facilitation in ms,
+                                 default=0 (off)
         """
         if params is None:
             return db.TsoParameters()
@@ -254,14 +258,13 @@ class BoltzmannMachineBase(object):
             Note: This gets only calculated once! Don't change self.samplers
             afterwards!
         """
-        return all( ((type(sampler.neuron_parameters) is\
-                type(self.samplers[0].neuron_parameters))\
-                for sampler in self.samplers) )
+        return all(isinstance(sampler.neuron_parameters,
+                   type(self.samplers[0].neuron_parameters))
+                   for sampler in self.samplers)
 
     @property
     def is_created(self):
         return self.population is not None
-
 
     ################
     # PYNN methods #
@@ -278,7 +281,7 @@ class BoltzmannMachineBase(object):
             setup PyNN.
         """
         if sim_setup_kwargs is not None:
-            exec "import {} as sim".format(self.sim_name) in globals(), locals()
+            sim = importlib.import_module(self.sim_name)
             sim.setup(**sim_setup_kwargs)
         self.create(*args, **kwargs)
 
@@ -286,21 +289,22 @@ class BoltzmannMachineBase(object):
         """
             Create the sampling network and return the pynn object.
 
-            If population is not None it should have length `self.num_samplers`.
-            Also, if you specify different samplers to have different
-            pynn_models, make sure that the list of pynn_objects provided
-            supports those!
+            If population is not None it should have length
+            `self.num_samplers`. Also, if you specify different samplers to
+            have different pynn_models, make sure that the list of pynn_objects
+            provided supports those!
 
             Returns the newly created or specified popluation object for the
             samplers and a dictionary over the projections.
 
             `_nest_optimization`: If True the network will try to use as few
-            sources as possible with the nest specific `poisson_generator` type.
+            sources as possible with the nest specific `poisson_generator`
+            type.
 
             If a different source model should be used, it can be specified via
-            _nest_source_model (string) and the corresponding kwargs.
-            If the source model needs a parrot neuron that repeats its spikes
-            in order to function, please note it.
+            _nest_source_model (string) and the corresponding kwargs. If the
+            source model needs a parrot neuron that repeats its spikes in order
+            to function, please note it.
         """
 
         log.info("Creating samplers.")
@@ -312,15 +316,14 @@ class BoltzmannMachineBase(object):
         return self.population, self.projections
 
     def create_population(self, duration=None, _nest_optimization=True,
-            **kwargs):
+                          **kwargs):
 
         assert duration is not None, "Duration must be set!"
-        exec "import {} as sim".format(self.sim_name) in globals(), locals()
-
+        sim = importlib.import_module(self.sim_name)
         self.sim = sim
 
         assert self.all_samplers_same_model,\
-                "The samplers have different pynn_models."
+            "The samplers have different pynn_models."
 
         # only perform nest optimizations when we have nest as simulator and
         # the user requests it
@@ -334,7 +337,8 @@ class BoltzmannMachineBase(object):
             log.info("NEST specific model: {}".format(
                 self.samplers[0].neuron_parameters.nest_model))
 
-        population = sim.Population(self.num_samplers,
+        population = sim.Population(
+                self.num_samplers,
                 self.samplers[0].get_pynn_model_object(sim)())
 
         for i, sampler in enumerate(self.samplers):
@@ -342,28 +346,18 @@ class BoltzmannMachineBase(object):
 
             # if we are performing nest optimizations, the sources will be
             # created afterwards
-            sampler.create(duration=duration, population=local_pop,
+            sampler.create(
+                    duration=duration, population=local_pop,
                     create_pynn_sources=False)
 
         self._set_network_in_samplers(population)
 
         # check whether we have the same source configuration for everything
-        # if all(s.calibration.source_config ==\
-                # self.samplers[0].calibration.source_config for s in self.samplers):
-        self._pynn_sources = db.sources_create_connect(sim,
+        self._pynn_sources = db.sources_create_connect(
+                sim,
                 self.samplers,
                 duration=duration,
                 nest_optimized=_nest_optimization)
-
-        # if _nest_optimization:
-            # log.info("Creating nest sources of type {}.".format(_nest_source_model))
-
-            # make sure the objects returned are referenced somewhere
-            # self._nest_sources, self._nest_projections =\
-                    # bb.create_nest_optimized_sources(
-                    # sim, self.samplers, population, duration,
-                    # source_model=_nest_source_model,
-                    # source_model_kwargs=_nest_source_model_kwargs)
 
         return population
 
@@ -383,7 +377,7 @@ class BoltzmannMachineBase(object):
     def sync_biases_to_pynn(self):
         if self.all_samplers_same_model:
             if isinstance(self.samplers[0].neuron_parameters,
-                    db.NativeNestMixin):
+                          db.NativeNestMixin):
                 self.population.set(E_L=self.v_rests)
             else:
                 self.population.set(v_rest=self.v_rests)
@@ -401,8 +395,8 @@ class BoltzmannMachineBase(object):
 
         expected_shape = (self.num_samplers, self.num_samplers)
         assert weights.shape == expected_shape,\
-                "Weight matrix shape {}, expected {}".format(weights.shape,
-                        expected_shape)
+            "Weight matrix shape {}, expected {}".format(
+                    weights.shape, expected_shape)
         weights = utils.fill_diagonal(weights, 0.)
         return weights
 
@@ -421,6 +415,7 @@ class BoltzmannMachineBase(object):
             s.network["population"] = population
             s.network["index"] = i
 
+
 @meta.HasDependencies
 class ThoroughBM(BoltzmannMachineBase):
     """
@@ -437,17 +432,18 @@ class ThoroughBM(BoltzmannMachineBase):
     ################
 
     def create_connectivity(self, **kwargs):
-        exec "import {} as sim".format(self.sim_name) in globals(), locals()
+        sim = None
+        sim = importlib.import_module(self.sim_name)
 
-        _nest_optimization = kwargs.get("_nest_optimization", True)\
-                and hasattr(sim, "nest")
+        _nest_optimization = (kwargs.get("_nest_optimization", True) and
+                              hasattr(sim, "nest"))
 
         # we dont set any connections for weights that are == 0.
         weight_is = {}
         weight_is["exc"] = self.weights_bio > 0.
         weight_is["inh"] = self.weights_bio < 0.
 
-        receptor_type = {"exc" : "excitatory", "inh" : "inhibitory"}
+        receptor_type = {"exc": "excitatory", "inh": "inhibitory"}
 
         global_delay = len(self.delays.shape) == 0
 
@@ -462,8 +458,8 @@ class ThoroughBM(BoltzmannMachineBase):
                 tau_rec = []
                 for sampler in self.samplers:
                     tau_rec.append({
-                            "exc" : sampler.neuron_parameters.tau_syn_E,
-                            "inh" : sampler.neuron_parameters.tau_syn_I,
+                            "exc": sampler.neuron_parameters.tau_syn_E,
+                            "inh": sampler.neuron_parameters.tau_syn_I,
                         })
             else:
                 log.info("TSO: tau_rec overwritten.")
@@ -482,11 +478,10 @@ class ThoroughBM(BoltzmannMachineBase):
 
             if self.saturating_synapses_enabled:
                 weights *= self.tso_params.weight_rescale
-            # weights[np.logical_not(weight_is[wt])] = np.NaN
 
             if wt == "inh":
                 weights *= (np.array([("_curr_" in s.pynn_model)
-                    for s in self.samplers], dtype=int) * 2) - 1
+                            for s in self.samplers], dtype=int) * 2) - 1
 
             if self.saturating_synapses_enabled and _nest_optimization\
                     and self.use_proper_tso:
@@ -495,18 +490,13 @@ class ThoroughBM(BoltzmannMachineBase):
                 # weight transformations ourselves
                 weights *= 1000.
 
-            # Not sure that array connector does what we want
-            # projections[wt] = sim.Projection(population, population,
-                    # connector=sim.ArrayConnector(weight_is[wt]),
-                    # synapse_type=sim.StaticSynapse(
-                        # weight=weights, delay=delays),
-                    # receptor_type=receptor_type[wt])
-
             connection_list = []
             for i_pre, i_post in it.izip(*np.nonzero(weight_is[wt])):
-                connection = (i_pre, i_post, weights[i_pre,i_post],
-                    self.delays if global_delay else self.delays[i_pre, i_post])
-                if self.saturating_synapses_enabled and not tau_rec_overwritten:
+                connection = (i_pre, i_post, weights[i_pre, i_post],
+                              self.delays if global_delay
+                              else self.delays[i_pre, i_post])
+                if self.saturating_synapses_enabled and\
+                        not tau_rec_overwritten:
                     connection += (tau_rec[i_post][wt],)
                 connection_list.append(connection)
 
@@ -520,8 +510,8 @@ class ThoroughBM(BoltzmannMachineBase):
                     del tso_params["x"]
                     del tso_params["weight_rescale"]
 
-                    synapse_type = sim.TsodyksMarkramSynapse(weight=0.,
-                            **tso_params)
+                    synapse_type = self.sim.TsodyksMarkramSynapse(weight=0.,
+                                                                  **tso_params)
                 else:
                     log.info("Using 'tsodyks2_synapse' native synapse model.")
 
@@ -529,7 +519,7 @@ class ThoroughBM(BoltzmannMachineBase):
                             "avoid_pynn_trying_to_be_smart")
 
                     tso_dikt = utils.filter_dict(self.tso_params.get_dict(),
-                            lambda _, v: v is not None)
+                                                 lambda _, v: v is not None)
 
                     # weight rescaling is something we do manually, it is not
                     # a parameter of the synapse type -> delete
@@ -542,13 +532,13 @@ class ThoroughBM(BoltzmannMachineBase):
                         "avoid_pynn_trying_to_be_smart")(**tso_dikt)
             else:
                 synapse_type = sim.StaticSynapse(weight=0.)
-            projections[wt] = sim.Projection(self.population, self.population,
+            projections[wt] = sim.Projection(
+                    self.population, self.population,
                     synapse_type=synapse_type,
                     connector=sim.FromListConnector(connection_list,
-                        column_names=column_names),
+                                                    column_names=column_names),
                     receptor_type=receptor_type[wt])
         return projections
-
 
     #########################
     # gather spikes methods #
@@ -568,16 +558,17 @@ class ThoroughBM(BoltzmannMachineBase):
             # We are requesting data when there is None
             return None
 
-    def gather_spikes(self, duration, dt=0.1, burn_in_time=100.,
-            create_kwargs=None, sim_setup_kwargs=None, initial_vmem=None):
+    def gather_spikes(self,
+                      duration, dt=0.1, burn_in_time=100., create_kwargs=None,
+                      sim_setup_kwargs=None, initial_vmem=None):
         """
             sim_setup_kwargs are the kwargs for the simulator (random seeds).
 
             initial_vmem are the initialized voltages for all samplers.
         """
         log.info("Gathering spike data in subprocess..")
-        self.spike_data = gather_data.gather_network_spikes(self,
-                duration=duration, dt=dt, burn_in_time=burn_in_time,
+        self.spike_data = gather_data.gather_network_spikes(
+                self, duration=duration, dt=dt, burn_in_time=burn_in_time,
                 create_kwargs=create_kwargs,
                 sim_setup_kwargs=sim_setup_kwargs,
                 initial_vmem=initial_vmem)
@@ -590,15 +581,14 @@ class ThoroughBM(BoltzmannMachineBase):
         return cutils.generate_states(
                 spike_ids=self.selected_sampler_spikes["id"],
                 spike_times=np.array(self.selected_sampler_spikes["t"] / dt,
-                    dtype=int),
-                tau_refrac_pss=np.array([
-                    int(self.samplers[i].neuron_parameters.tau_refrac / dt)
-                    for i in self.selected_sampler_idx]),
+                                     dtype=int),
+                tau_refrac_pss=np.array(
+                    [int(self.samplers[i].neuron_parameters.tau_refrac / dt)
+                     for i in self.selected_sampler_idx]),
                 num_samplers=len(self.selected_sampler_idx),
                 steps_per_sample=steps_per_sample,
                 duration=np.array(self.spike_data["duration"] / dt, dtype=int)
             )
-
 
     @meta.DependsOn("spike_data")
     def selected_sampler_spikes(self):
@@ -632,7 +622,6 @@ class ThoroughBM(BoltzmannMachineBase):
         else:
             return np.array(list(set(selected_sampler_idx)), dtype=np.int)
 
-
     ################
     # MISC methods #
     ################
@@ -655,7 +644,6 @@ class ThoroughBM(BoltzmannMachineBase):
                 log.debug(sys.exc_info()[0])
             return None
 
-
     #######################
     # PROBABILITY methdos #
     #######################
@@ -666,7 +654,7 @@ class ThoroughBM(BoltzmannMachineBase):
             Marginal distribution computed from spike data.
         """
         log.info("Calculating marginal probability distribution for {} "
-                "samplers.".format(len(self.selected_sampler_idx)))
+                 "samplers.".format(len(self.selected_sampler_idx)))
 
         marginals = np.zeros((len(self.selected_sampler_idx),))
 
@@ -682,15 +670,16 @@ class ThoroughBM(BoltzmannMachineBase):
     @meta.DependsOn("spike_data", "selected_sampler_idx")
     def dist_joint_sim(self):
         # tau_refrac per selected sampler
-        tau_refrac_pss = np.array([self.samplers[i].neuron_parameters.tau_refrac
-                for i in self.selected_sampler_idx])
+        tau_refrac_pss = np.array(
+                [self.samplers[i].neuron_parameters.tau_refrac
+                 for i in self.selected_sampler_idx])
 
         spike_ids = np.require(self.ordered_spikes["id"], requirements=["C"])
         spike_times = np.require(self.ordered_spikes["t"], requirements=["C"])
 
-        return cutils.get_bm_joint_sim(spike_ids, spike_times,
-                self.selected_sampler_idx, tau_refrac_pss,
-                self.spike_data["duration"])
+        return cutils.get_bm_joint_sim(
+                spike_ids, spike_times, self.selected_sampler_idx,
+                tau_refrac_pss, self.spike_data["duration"])
 
     @meta.DependsOn("selected_sampler_idx", "biases_theo", "weights_theo")
     def dist_marginal_theo(self):
@@ -702,16 +691,16 @@ class ThoroughBM(BoltzmannMachineBase):
         lc_biases = np.require(lc_biases, requirements=["C"])
         lc_weights = np.require(lc_weights, requirements=["C"])
 
-        return cutils.get_bm_marginal_theo(lc_weights, lc_biases,
-                self.selected_sampler_idx)
+        return cutils.get_bm_marginal_theo(
+                lc_weights, lc_biases, self.selected_sampler_idx)
 
     @meta.DependsOn("selected_sampler_idx", "biases_theo", "weights_theo")
     def dist_joint_theo(self):
         """
             Joint distribution for all selected samplers.
         """
-        log.info("Calculating joint theoretical distribution for {} samplers."\
-                .format(len(self.selected_sampler_idx)))
+        log.info("Calculating joint theoretical distribution for {} samplers."
+                 .format(len(self.selected_sampler_idx)))
 
         lc_biases = self.biases_theo
         lc_weights = self.weights_theo
@@ -748,7 +737,7 @@ class ThoroughBM(BoltzmannMachineBase):
         if logscale:
             ax.set_yscale("log")
             min_val = min(self.dist_marginal_theo.min(),
-                    self.dist_marginal_sim.min())
+                          self.dist_marginal_sim.min())
 
             # find corresponding exponent
             bottom = 10**np.floor(np.log10(min_val))
@@ -756,12 +745,12 @@ class ThoroughBM(BoltzmannMachineBase):
             bottom = 0.
 
         ax.bar(idx, height=self.dist_marginal_theo.flatten(), width=width,
-                bottom=bottom,
-                color="r", edgecolor="None", label="marginal theo")
+               bottom=bottom, color="r", edgecolor="None",
+               label="marginal theo")
 
         ax.bar(idx+width, height=self.dist_marginal_sim.flatten(), width=width,
-                bottom=bottom,
-                color="b", edgecolor="None", label="marginal sim")
+               bottom=bottom, color="b", edgecolor="None",
+               label="marginal sim")
 
         ax.legend(loc="best")
 
@@ -779,7 +768,7 @@ class ThoroughBM(BoltzmannMachineBase):
         if logscale:
             ax.set_yscale("log")
             min_val = min(self.dist_joint_theo.min(),
-                    self.dist_joint_sim.min())
+                          self.dist_joint_sim.min())
 
             # find corresponding exponent
             bottom = 10**np.floor(np.log10(min_val))
@@ -787,12 +776,10 @@ class ThoroughBM(BoltzmannMachineBase):
             bottom = 0.
 
         ax.bar(idx, height=self.dist_joint_theo.flatten(), width=width,
-                bottom=bottom,
-                color="r", edgecolor="None", label="joint theo")
+               bottom=bottom, color="r", edgecolor="None", label="joint theo")
 
         ax.bar(idx+width, height=self.dist_joint_sim.flatten(), width=width,
-                bottom=bottom,
-                color="b", edgecolor="None", label="joint sim")
+               bottom=bottom, color="b", edgecolor="None", label="joint sim")
 
         ax.legend(loc="best")
 
@@ -802,24 +789,26 @@ class ThoroughBM(BoltzmannMachineBase):
         ax.set_xlim(0, idx[-1]+2*width)
 
         ax.set_xticks(idx+width)
-        ax.set_xticklabels(labels=["\n".join(map(str, state))
-            for state in np.ndindex(*self.dist_joint_theo.shape)])
+        ax.set_xticklabels(
+            labels=["\n".join(map(str, state))
+                    for state in np.ndindex(*self.dist_joint_theo.shape)])
 
     @meta.plot_function("weights_theo")
     def plot_weights_theo(self, fig=None, ax=None):
         self._plot_weights(self.weights_theo, self.biases_theo,
-                label="theoretical values", fig=fig, ax=ax)
+                           label="theoretical values", fig=fig, ax=ax)
 
     @meta.plot_function("weights_bio")
     def plot_weights_bio(self, fig=None, ax=None):
         self._plot_weights(self.weights_bio, self.biases_theo,
-                label="biological values", fig=fig, ax=ax)
+                           label="biological values", fig=fig, ax=ax)
 
     ####################
     # INTERNAL methods #
     ####################
 
-    def _plot_weights(self, weights, biases, label="", cmap="jet", fig=None, ax=None):
+    def _plot_weights(self, weights, biases, label="", cmap="jet", fig=None,
+                      ax=None):
         cmap = p.get_cmap(cmap)
 
         matrix = weights.copy()
@@ -832,6 +821,7 @@ class ThoroughBM(BoltzmannMachineBase):
 
         ax.set_xlabel("sampler id")
         ax.set_ylabel("sampler id")
+
 
 @meta.HasDependencies
 class RapidBMBase(BoltzmannMachineBase):
@@ -856,12 +846,12 @@ class RapidBMBase(BoltzmannMachineBase):
         # how many updates do we queue maximally
         self.num_max_queued_updates = 100
 
-        self.time_sim_step = 30. # ms
-        self.time_wipe = 50. # time between silence and imprint
-        self.time_imprint = 30. # how long are the
+        self.time_sim_step = 30.  # ms
+        self.time_wipe = 50.      # time between silence and imprint
+        self.time_imprint = 30.   # how long are the
         self._update_num = 0
         self._update_info = {
-                "to_notify" : set(),
+                "to_notify": set(),
             }
 
         # has to be non-None for the propagation to binary state to work
@@ -881,7 +871,7 @@ class RapidBMBase(BoltzmannMachineBase):
             Otherwise the connectivity_matrix is inferred from the current
             weight configuration.
         """
-        exec "import {} as sim".format(self.sim_name) in globals(), locals()
+        sim = importlib.import_module(self.sim_name)
         self.sim = sim
         assert hasattr(self.sim, "nest"), "Only works with NEST."
 
@@ -892,14 +882,11 @@ class RapidBMBase(BoltzmannMachineBase):
         population = super(RapidBMBase, self).create_population(**kwargs)
         self._sampler_gids = population.all_cells.tolist()
 
-        # self.last_spiketime_detector = self.sim.Population(1,
-                # self.sim.native_cell_type("last_spike_detector")())
         self._last_spiketime_detector_id = self.sim.nest.Create(
                 "last_spike_detector")
 
-        # self._proj_pop_lsd = self.sim.Projection(population,
-                # self.last_spiketime_detector, self.sim.AllToAllConnector())
-        self.sim.nest.Connect(population.all_cells.tolist(),
+        self.sim.nest.Connect(
+                population.all_cells.tolist(),
                 self._last_spiketime_detector_id, "all_to_all")
 
         self.population = population
@@ -914,8 +901,8 @@ class RapidBMBase(BoltzmannMachineBase):
     def create_connectivity(self, **kwargs):
         # TODO: Add support for TSO
         if self.saturating_synapses_enabled:
-            log.warn(self.__class__.__name__ + " currently does not support "\
-                    "saturating synapses.")
+            log.warn(self.__class__.__name__ + " currently does not support "
+                     "saturating synapses.")
 
         global_delay = len(self.delays.shape) == 0
 
@@ -930,15 +917,17 @@ class RapidBMBase(BoltzmannMachineBase):
         self._copy_synapse_type()
 
         for src, tgt in it.izip(*np.where(connectivity_matrix)):
-            nest.Connect(gids[src], gids[tgt], syn_spec={
-                "weight" : 0.,
-                "delay"  : self.delays[src, tgt] if not global_delay
-                            else self.delays,
-                "model" : self.local_nest_synapse_type})
+            nest.Connect(
+                gids[src], gids[tgt], syn_spec={
+                    "weight": 0.,
+                    "delay": self.delays[src, tgt] if not global_delay
+                    else self.delays,
+                    "model": self.local_nest_synapse_type})
 
         # we need to sort the returned connections by gids, not by thread
         # to stay consistent with the update machinery
-        self._nest_connections = sorted(nest.GetConnections(gids, gids),
+        self._nest_connections = sorted(
+                nest.GetConnections(gids, gids),
                 key=utils.nest_key_connections)
         self.create_update_machinery()
 
@@ -959,9 +948,10 @@ class RapidBMBase(BoltzmannMachineBase):
         self.update_params.prepare_next_update()
         self.update_params.set_eta(self.eta)
         self.update_params.set_update_data(self.update_factors)
-        self.update_params.set_weight_conversion_factors([
-            [s.factor_weights_theo_to_bio_exc, s.factor_weights_theo_to_bio_inh]
-                for s in self.samplers])
+        self.update_params.set_weight_conversion_factors(
+            [[s.factor_weights_theo_to_bio_exc,
+              s.factor_weights_theo_to_bio_inh]
+             for s in self.samplers])
         self.update_params.flush_files()
 
         if self.update_params.get_snapshots_used()\
@@ -976,7 +966,6 @@ class RapidBMBase(BoltzmannMachineBase):
 
             except IndexError:
                 pass
-
 
     def continue_run(self, runtime):
         """
@@ -1032,8 +1021,6 @@ class RapidBMBase(BoltzmannMachineBase):
 
         weights = weights[self.connectivity_matrix]
 
-        # for conn, weight in it.izip(self._nest_connections, weights):
-            # self.sim.nest.SetStatus([conn], {"weight" : weight})
         self.sim.nest.SetStatus(self._nest_connections, "weight", weights)
 
     def get_sampler_update(self):
@@ -1042,10 +1029,10 @@ class RapidBMBase(BoltzmannMachineBase):
             what updated parameters are written to the samplers.
         """
         update = []
-        for i,s in enumerate(self.samplers):
+        for i, s in enumerate(self.samplers):
             local_update = {
                 "E_L": s.get_v_rest_from_bias(),
-                "factor_weight_conversion_exc" :
+                "factor_weight_conversion_exc":
                     s.factor_weights_theo_to_bio_exc * 1000.,
                 "factor_weight_conversion_inh":
                     s.factor_weights_theo_to_bio_inh * 1000.,
@@ -1065,7 +1052,7 @@ class RapidBMBase(BoltzmannMachineBase):
             emptied.
         """
         self.sim.nest.SetStatus(self._nest_connections,
-                "manual_weight_update", True)
+                                "manual_weight_update", True)
 
     ##############
     # Properties #
@@ -1166,8 +1153,6 @@ class RapidBMBase(BoltzmannMachineBase):
                 self._nest_connections, "weight_theo")))
         else:
             value = self._check_weight_matrix(value)
-            # if self.is_created:
-                # self._write_weights(value, kind="theo")
             return value
 
     @meta.DependsOn("time_current", "weights_theo")
@@ -1178,10 +1163,7 @@ class RapidBMBase(BoltzmannMachineBase):
                 self._nest_connections, "weight"))) / 1000.
         else:
             value = self._check_weight_matrix(value)
-            # if self.is_created:
-                # self._write_weights(value, kind="bio")
             return value
-
 
     ####################
     # INTERNAL methods #
@@ -1211,7 +1193,7 @@ class RapidBMBase(BoltzmannMachineBase):
         # check if the filepath has already been set (by another
         # boltzmann-machine with the same fixed synapse name)
         filepath = self.sim.nest.GetDefaults(self.local_nest_synapse_type,
-                "filepath")
+                                             "filepath")
 
         if len(filepath) == 0:
             self.update_params = io.UpdateParamsCD(
@@ -1228,7 +1210,7 @@ class RapidBMBase(BoltzmannMachineBase):
         self.sim.nest.SetDefaults(
                 self.local_nest_synapse_type, {
                     "filepath": self.update_params.get_filepath(),
-                    "first_gid" : first_gid,
+                    "first_gid": first_gid,
                 })
 
     def _create_imprint_circuitry(self):
@@ -1246,8 +1228,8 @@ class RapidBMBase(BoltzmannMachineBase):
         for i, sampler in enumerate(self.samplers):
             if not sampler.pynn_model.endswith("_cd"):
                 new_model = sampler.pynn_model + "_cd"
-                log.warn("[Sampler #{}] Changing model from {} -> {}…".format(i,
-                    sampler.pynn_model, new_model))
+                log.warn("[Sampler #{}] Changing model from {} -> {}…".format(
+                    i, sampler.pynn_model, new_model))
                 sampler.neuron_parameters.pynn_model = new_model
 
     def _copy_synapse_type(self):
@@ -1271,6 +1253,7 @@ class RapidBMBase(BoltzmannMachineBase):
         log.info("Copied nest model: {} -> {}".format(
             original_synapse_type,
             self.local_nest_synapse_type))
+
 
 @meta.HasDependencies
 class RapidBMImprintCurrent(RapidBMBase):
@@ -1300,16 +1283,16 @@ class RapidBMImprintCurrent(RapidBMBase):
         if hasattr(self, "_wipe_gen_id"):
             self.sim.nest.SetStatus(self._wipe_gen_id, {
                 "amplitude": -1 * np.abs(current) * 1000.,
-                "start" : 0.,
-                "stop" : 0.,
+                "start": 0.,
+                "stop": 0.,
             })
         return current
 
     def _prepare_imprint(self, wipe_start=None):
         binary_state = self.binary_state
 
-        imprint_idx = np.where((binary_state == 0)\
-                + (self.binary_state == 1))[0]
+        imprint_idx = (np.where((binary_state == 0) +
+                       (self.binary_state == 1))[0])
 
         if wipe_start is None:
             wipe_start = self.time_current + 2*self.sim.simulator.state.dt
@@ -1319,15 +1302,15 @@ class RapidBMImprintCurrent(RapidBMBase):
 
         if self.time_wipe > 0.:
             self.sim.nest.SetStatus(self._wipe_gen_id, {
-                    "start" : wipe_start,
-                    "stop" : imprint_start,
+                    "start": wipe_start,
+                    "stop": imprint_start,
                 })
 
         if log.getEffectiveLevel() <= logging.DEBUG:
             log.debug("Wipe start/stop: {:.1f}/{:.1f}".format(wipe_start,
-                imprint_start))
+                      imprint_start))
             log.debug("Imprint start/stop: {:.1f}/{:.1f}".format(imprint_start,
-                imprint_stop))
+                      imprint_stop))
 
         if self._binary_state_set_externally:
             for state in [0, 1]:
@@ -1335,10 +1318,11 @@ class RapidBMImprintCurrent(RapidBMBase):
 
                 self.sim.nest.SetStatus(
                     self._imprint_gen_ids[imprint_idx].tolist(), {
-                    "start" : imprint_start,
-                    "stop" : imprint_stop,
-                    "amplitude" : self.current_imprint * 1000. * (2*state - 1),
-                })
+                        "start": imprint_start,
+                        "stop": imprint_stop,
+                        "amplitude":
+                            self.current_imprint * 1000. * (2*state - 1),
+                    })
         self._binary_state_set_externally = False
 
         return imprint_start + self.time_sim_step
@@ -1354,10 +1338,13 @@ class RapidBMImprintCurrent(RapidBMBase):
         # this writes the amplitude to the nest objects
         self.current_wipe = self.current_wipe
 
-        self.sim.nest.Connect(self._wipe_gen_id,
-                self.population.all_cells.tolist(), "all_to_all")
-        self.sim.nest.Connect(self._imprint_gen_ids.tolist(),
-                self.population.all_cells.tolist(), "one_to_one")
+        self.sim.nest.Connect(
+            self._wipe_gen_id, self.population.all_cells.tolist(),
+            "all_to_all")
+        self.sim.nest.Connect(
+            self._imprint_gen_ids.tolist(), self.population.all_cells.tolist(),
+            "one_to_one")
+
 
 @meta.HasDependencies
 class RapidBMImprintVmem(RapidBMBase):
@@ -1376,8 +1363,8 @@ class RapidBMImprintVmem(RapidBMBase):
         if hasattr(self, "_wipe_gen_id"):
             self.sim.nest.SetStatus(self._wipe_gen_id, {
                 "amplitude": -1 * np.abs(current) * 1000.,
-                "start" : 0.,
-                "stop" : 0.,
+                "start": 0.,
+                "stop": 0.,
             })
         return current
 
@@ -1405,8 +1392,8 @@ class RapidBMImprintVmem(RapidBMBase):
     def _prepare_imprint(self, wipe_start=None):
         binary_state = self.binary_state
 
-        imprint_idx = np.where((binary_state == 0)\
-                + (self.binary_state == 1))[0]
+        imprint_idx = (np.where((binary_state == 0) +
+                       (self.binary_state == 1))[0])
 
         if wipe_start is None:
             wipe_start = self.time_current
@@ -1417,8 +1404,8 @@ class RapidBMImprintVmem(RapidBMBase):
 
         if self.time_wipe > 0.:
             self.sim.nest.SetStatus(self._wipe_gen_id, {
-                    "start" : wipe_start,
-                    "stop" : wipe_stop,
+                    "start": wipe_start,
+                    "stop": wipe_stop,
                 })
 
         Vmems = [self.vmem_off, self.vmem_on]
@@ -1429,8 +1416,8 @@ class RapidBMImprintVmem(RapidBMBase):
 
                 self.sim.nest.SetStatus(
                     self.population.all_cells[imprint_idx].tolist(), {
-                        "V_m" : Vmems[state],
-                })
+                        "V_m": Vmems[state],
+                    })
         self._binary_state_set_externally = False
 
         # return imprint_start
@@ -1443,8 +1430,10 @@ class RapidBMImprintVmem(RapidBMBase):
         # this writes the amplitude to the nest objects
         self.current_wipe = self.current_wipe
 
-        self.sim.nest.Connect(self._wipe_gen_id,
-                self.population.all_cells.tolist(), "all_to_all")
+        self.sim.nest.Connect(
+            self._wipe_gen_id, self.population.all_cells.tolist(),
+            "all_to_all")
+
 
 @meta.HasDependencies
 class RapidBMImprintSpike(RapidBMBase):
@@ -1460,13 +1449,14 @@ class RapidBMImprintSpike(RapidBMBase):
         # the weight with the current binary state is imprinted on the network
         self.imprint_weight_theo = 50.
         self.num_wipe_spikes = 1
-        self.time_current = 0.1 # so that the imprint spikes are set properly
+        self.time_current = 0.1  # so that the imprint spikes are set properly
 
     def _create_imprint_circuitry(self):
         self._imprint_gen_ids = np.array(
                 self.sim.nest.Create("spike_generator", self.population.size))
         self.sim.nest.Connect(self._imprint_gen_ids.tolist(),
-                self.population.all_cells.tolist(), 'one_to_one')
+                              self.population.all_cells.tolist(),
+                              'one_to_one')
 
     @meta.DependsOn("imprint_weight_theo")
     def imprint_weights_bio(self):
@@ -1497,37 +1487,35 @@ class RapidBMImprintSpike(RapidBMBase):
 
         wipe_time_start = self.time_current + 2*self.sim.simulator.state.dt
         wipe_times = np.linspace(0., self.time_wipe, self.num_wipe_spikes,
-                endpoint=False)
+                                 endpoint=False)
         wipe_times += wipe_time_start
 
         imprint_time = wipe_time_start + self.time_wipe
 
-        imprint_idx = np.where((binary_state == 0)\
-                + (self.binary_state == 1))[0]
+        imprint_idx = (np.where((binary_state == 0) +
+                       (self.binary_state == 1))[0])
 
         # update all stimulated neurons
         for i, gid in enumerate(self._imprint_gen_ids[imprint_idx]):
-            spike_weights = imprint_weights[i:i+1, [0]*len(wipe_times)
-                    + [binary_state[i]]].flatten()
+            spike_weights = (imprint_weights[i:i+1, [0]*len(wipe_times) +
+                             [binary_state[i]]].flatten())
             spike_weights[:-1] /= self.num_wipe_spikes
             self.sim.nest.SetStatus(
                 [gid], {
-                "spike_times" : np.r_[wipe_times, np.array([imprint_time])],
-                # "spike_times" : spike_time,
-                "spike_weights" : spike_weights,
-            })
+                    "spike_times": np.r_[wipe_times, np.array([imprint_time])],
+                    "spike_weights": spike_weights,
+                })
 
         # update all unstimulated ones
         for i, gid in enumerate(
                 self._imprint_gen_ids[np.logical_not(imprint_idx)]):
-            spike_weights = imprint_weights[i:i+1, [0]*len(wipe_times)]\
-                        /self.num_wipe_spikes
+            spike_weights = (imprint_weights[i:i+1, [0]*len(wipe_times)] /
+                             self.num_wipe_spikes)
             self.sim.nest.SetStatus(
                 [gid], {
-                "spike_times" : wipe_times,
-                # "spike_times" : spike_time,
-                "spike_weights" : spike_weights.flatten()
-            })
+                    "spike_times": wipe_times,
+                    "spike_weights": spike_weights.flatten()
+                })
 
         self._binary_state_set_externally = False
 
@@ -1634,7 +1622,7 @@ class MixinRBM(object):
 
         if self.saturating_synapses_enabled:
             params = [{"weight": w * self.tso_params.weight_rescale}
-                                 for w in it.chain(*sorted_weights)]
+                      for w in it.chain(*sorted_weights)]
         else:
             params = [{"weight": w} for w in it.chain(*sorted_weights)]
 
@@ -1650,7 +1638,7 @@ class MixinRBM(object):
             # print some randomly chosen connections for debug infos
 
             import nest
-            weights_tgt = (p["weight"] for p in params)
+            #  weights_tgt = (p["weight"] for p in params)
 
             num_samples = 100
 
@@ -1683,14 +1671,13 @@ class MixinRBM(object):
                     params[p_i_pre]["weight"],
                     params[p_i_post]["weight"]))
 
-
     def _check_delays(self, delays):
         if np.isscalar(delays):
             global_delay = float(delays)
-            delays = [global_delay * np.ones((2,
-                self.num_units_per_layer[i_l],
-                self.num_units_per_layer[i_l+1]))
-                    for i_l in xrange(self.num_layers-1)]
+            delays = [global_delay * np.ones(
+                (2, self.num_units_per_layer[i_l],
+                 self.num_units_per_layer[i_l+1]))
+                for i_l in xrange(self.num_layers-1)]
 
         else:
             assert isinstance(delays, list)
@@ -1717,10 +1704,6 @@ class MixinRBM(object):
                     offset[i]+num_units:offset[i]+2*num_units
                 ].reshape(nupl[i+1], nupl[i]).T
 
-            # lw = orig_weights[offset[i]:offset[i+1]].reshape(2,
-                # upl[i], upl[i+1])
-            # the connections in nest are sorted the other way around
-            # lw[1, :, :] = lw[1, :, :].T.reshape(lw.shape[1:])
             weights.append(lw)
 
         return weights
@@ -1731,8 +1714,8 @@ class MixinRBM(object):
 
         if self.saturating_synapses_enabled and not\
                 self.local_nest_synapse_type.startswith("tsodyks2_synapse"):
-            log.warn(self.__class__.__name__ + " currently does not support "\
-                    "saturating synapses.")
+            log.warn(self.__class__.__name__ + " currently does not support "
+                     "saturating synapses.")
 
         import nest
 
@@ -1740,7 +1723,7 @@ class MixinRBM(object):
         if all_delays_the_same:
             log.info("Setting homogeneous delays.")
             nest.SetDefaults(self.local_nest_synapse_type, "delay",
-                    self.delays[0][0, 0, 0])
+                             self.delays[0][0, 0, 0])
 
         # we ignore the connectivity matrix
         self._nest_connections = []
@@ -1755,16 +1738,17 @@ class MixinRBM(object):
             nest.Connect(
                     gids[offset[i_l]:offset[i_l+1]],
                     gids[offset[i_l+1]:offset[i_l+2]], 'all_to_all',
-                    syn_spec={"model" : self.local_nest_synapse_type})
+                    syn_spec={"model": self.local_nest_synapse_type})
             nest.Connect(
                     gids[offset[i_l+1]:offset[i_l+2]],
                     gids[offset[i_l]:offset[i_l+1]], 'all_to_all',
-                    syn_spec={"model" : self.local_nest_synapse_type})
+                    syn_spec={"model": self.local_nest_synapse_type})
 
         log.info("Reading connections from NEST.")
         # we need to sort the returned connections by gids, not by thread
         # to stay consistent with the update machinery
-        self._nest_connections = sorted(nest.GetConnections(gids, gids),
+        self._nest_connections = sorted(
+                nest.GetConnections(gids, gids),
                 key=utils.nest_key_connections)
 
         # log.info("Setting weights to zero.")
@@ -1773,9 +1757,10 @@ class MixinRBM(object):
         # test whether all delays are the same or not
         if not all_delays_the_same:
             log.info("Setting heterogeneous delays.")
-            nest.SetStatus(self._nest_connections, "delay",
-                [d for l_delay in self.delays for d in
-                    it.chain(l_delay[0].reshape(-1), l_delay[1].T.reshape(-1))])
+            nest.SetStatus(
+                self._nest_connections, "delay", [
+                    d for l_delay in self.delays for d in it.chain(
+                        l_delay[0].reshape(-1), l_delay[1].T.reshape(-1))])
 
         log.info("Done connecting.")
         self._create_update_circuitry()
@@ -1791,7 +1776,7 @@ class MixinRBM(object):
 
             for i in xrange(self.num_layers-1):
                 weights = np.empty((2, self.num_units_per_layer[i],
-                            self.num_units_per_layer[i+1]))
+                                    self.num_units_per_layer[i+1]))
                 weights.fill(scalar_weight)
 
                 all_weights.append(weights)
@@ -1800,44 +1785,32 @@ class MixinRBM(object):
 
         for i, w in enumerate(weights):
             expected_shape = (2, self.num_units_per_layer[i],
-                    self.num_units_per_layer[i+1])
+                              self.num_units_per_layer[i+1])
 
             if w.shape == expected_shape[1:]:
                 weights[i] = np.repeat(np.expand_dims(w, axis=0),
-                        repeats=2, axis=0)
+                                       repeats=2, axis=0)
 
             else:
                 assert w.shape == expected_shape,\
-                        "Weight matrix shape {}, expected {} (layer {} <-> {})"\
-                        .format(w.shape, expected_shape, i, i+1)
+                    ("Weight matrix shape {}, expected {} (layer {} <-> {})"
+                     .format(w.shape, expected_shape, i, i+1))
         return weights
 
     def all_delays_the_same(self):
         return all(((l_delays == self.delays[0][0, 0, 0]).all()
-            for l_delays in self.delays))
-
+                    for l_delays in self.delays))
 
     def _write_weights(self, weights, kind="theo"):
         # TODO Convert theoretical weights as well before writing
         assert self.is_created
-        # if kind == "theo":
-            # weight_theo = weights
-            # weight_bio = self.convert_weights_theo_to_bio(weight_theo)
-        # elif kind == "bio":
-            # weight_bio = weights
-            # weight_theo = self.convert_weights_bio_to_theo(weight_bio)
-        # else:
-            # raise ValueError("Invalid weight type supplied.")
         label = {
-                "theo" : "weight_theo",
-                "bio" : "weight",
+                "theo": "weight_theo",
+                "bio": "weight",
             }[kind]
-        # data = [{"weight": w_b, "weight_theo" : w_t}
-                # for lwb, lwt in it.chain(*it.izip(weight_bio, weight_theo))
-                # for w_b, w_t in it.izip(lwb.reshape(-1), lwt.reshape(-1))]
-        data = [{label : w} for layer_w in weights
-            for w in it.chain(layer_w[0].reshape(-1), layer_w[1].T.reshape(-1))]
-            # it.chain(layer_w[0].reshape(-1), layer_w[1].T.reshape(-1))}]
+        data = [{label: w} for layer_w in weights
+                for w in it.chain(layer_w[0].reshape(-1),
+                                  layer_w[1].T.reshape(-1))]
         self.sim.nest.SetStatus(self._nest_connections, data)
 
 
@@ -1861,7 +1834,7 @@ class ThoroughRBM(MixinRBM, BoltzmannMachineBase):
         return population
 
     def create_connectivity(self, **kwargs):
-        exec "import {} as sim".format(self.sim_name) in globals(), locals()
+        sim = importlib.import_module(self.sim_name)
         self.sim = sim
 
         super(ThoroughRBM, self).create_connectivity(**kwargs)
@@ -1872,10 +1845,14 @@ class ThoroughRBM(MixinRBM, BoltzmannMachineBase):
     def _copy_synapse_type(self):
         if self.saturating_synapses_enabled:
             neuron_params = self.samplers[0].neuron_parameters
-            all_tau_syn_E_same = all(s.neuron_parameters.tau_syn_E ==
-                    neuron_params.tau_syn_E for s in self.samplers)
-            all_tau_syn_I_same = all(s.neuron_parameters.tau_syn_I ==
-                    neuron_params.tau_syn_I for s in self.samplers)
+
+            all_tau_syn_E_same = all(
+                s.neuron_parameters.tau_syn_E == neuron_params.tau_syn_E
+                for s in self.samplers)
+
+            all_tau_syn_I_same = all(
+                s.neuron_parameters.tau_syn_I == neuron_params.tau_syn_I
+                for s in self.samplers)
 
             tau_syn_same = neuron_params.tau_syn_E == neuron_params.tau_syn_I
 
@@ -1895,8 +1872,9 @@ class ThoroughRBM(MixinRBM, BoltzmannMachineBase):
                 self.local_nest_synapse_type = model_name
 
             else:
-                raise NotImplementedError("TSO not supported for different "
-                        "synaptic time constants in samplers yet.")
+                raise NotImplementedError(
+                    "TSO not supported for different synaptic time constants "
+                    "in samplers yet.")
 
         else:
             self.local_nest_synapse_type = utils.nest_copy_model(
@@ -1920,6 +1898,7 @@ class RapidRBMBase(MixinRBM, RapidBMBase):
     """
     pass
 
+
 @meta.HasDependencies
 class RapidRBMImprintCurrent(MixinRBM, RapidBMImprintCurrent):
     """
@@ -1927,12 +1906,14 @@ class RapidRBMImprintCurrent(MixinRBM, RapidBMImprintCurrent):
     """
     pass
 
+
 @meta.HasDependencies
 class RapidRBMImprintVmem(MixinRBM, RapidBMImprintVmem):
     """
         RBM with current imprints.
     """
     pass
+
 
 ####################
 # HELPER FUNCTIONS #
@@ -1962,5 +1943,3 @@ def setup_rapid_bms_for_updates(bms, burn_in_time=100.):
         #
         # Also we make sure that all neurons actually spiked.
         assert (bm.last_spiketimes > 0).all()
-
-

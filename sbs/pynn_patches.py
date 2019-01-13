@@ -7,7 +7,7 @@ import functools as ft
 
 
 def pynn_get_analogsignals(segment):
-    try: # pynn 0.9 syntax
+    try:  # pynn 0.9 syntax
         return segment.analogsignals
     except AttributeError:
         return segment.analogsignalarrays
@@ -39,8 +39,7 @@ def fix_nest_synapse_defaults(
         If any more errors are encountered, the list of undesired keys might
         have to be augmented.
     """
-
-    ### First, check if the error is present:
+    # First, check if the error is present:
     import importlib
     synapses = importlib.import_module("pyNN.nest.synapses")
     present_defaults = synapses.get_synapse_defaults(synapse_model_to_check)
@@ -52,7 +51,7 @@ def fix_nest_synapse_defaults(
         if log.getEffectiveLevel() <= logging.DEBUG:
             log.debug("Offending keys in default synapse dictionary: " +
                       ", ".join((k for k in undesired_keys
-                      if k in present_defaults)))
+                                 if k in present_defaults)))
 
         # we need to monkey patch the
         # get_synapse_defaults-method
@@ -86,8 +85,6 @@ def fix_nest_tsodyks(alternative_name="avoid_pynn_trying_to_be_smart"):
     import pyNN.nest as sim
     if alternative_name not in nest.Models():
         sim.nest.CopyModel("tsodyks2_synapse_lbl",
-            alternative_name + "_lbl")
+                           alternative_name + "_lbl")
         sim.nest.CopyModel("tsodyks2_synapse",
-            alternative_name)
-
-
+                           alternative_name)

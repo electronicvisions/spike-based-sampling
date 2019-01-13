@@ -2,11 +2,12 @@
 # encoding: utf-8
 
 import numpy as np
-import atexit 
+import atexit
 import os
 
 from .logcfg import log
 from . import utils
+
 
 class UpdateParamsCD(object):
     """
@@ -22,10 +23,10 @@ class UpdateParamsCD(object):
         """
         if filepath is None and (num_nodes is None or num_snapshots is None):
             raise IOError("Have to specify either num_nodes/num_snapshots or "
-                    "filepath.")
+                          "filepath.")
 
         self._create(num_nodes=num_nodes, num_snapshots=num_snapshots,
-                filepath=filepath)
+                     filepath=filepath)
 
     def _create(self, num_nodes=None, num_snapshots=None, filepath=None):
         if filepath is None:
@@ -54,12 +55,13 @@ class UpdateParamsCD(object):
             shape = None
 
         self._mm_dbl = np.memmap(self.get_filepath(), mode=mode,
-                shape=shape, order="C", dtype=np.float64)
+                                 shape=shape, order="C", dtype=np.float64)
         self._mm_int = np.memmap(self.get_filepath(), mode="r+",
-                shape=None, order="C", dtype=np.int64)
+                                 shape=None, order="C", dtype=np.int64)
 
         if create_file:
-            self._write_preamble(num_nodes=num_nodes, num_snapshots=num_snapshots)
+            self._write_preamble(
+                    num_nodes=num_nodes, num_snapshots=num_snapshots)
         self._calc_sizes()
         log.info("Shared memory file in: {}".format(self.get_filepath()))
 
@@ -90,8 +92,8 @@ class UpdateParamsCD(object):
         """
             Sets learning rate for current snapshot.
         """
-        self._mm_dbl[self._get_offset_snapshot()\
-                + self._get_offset_eta_in_snapshot()] = eta
+        self._mm_dbl[self._get_offset_snapshot() +
+                     self._get_offset_eta_in_snapshot()] = eta
 
     def set_update_data(self, update_data):
         offset = self._get_offset_snapshot() + self._get_size_snapshot_header()
@@ -118,9 +120,9 @@ class UpdateParamsCD(object):
         if num_snapshots is None:
             num_snapshots = self.get_num_snapshots()
 
-        return self._get_size_header()\
-                + num_snapshots * self._get_size_snapshot(num_nodes=num_nodes)\
-                + num_nodes * self._get_size_misc_nodedata()
+        return (self._get_size_header() +
+                num_snapshots * self._get_size_snapshot(num_nodes=num_nodes) +
+                num_nodes * self._get_size_misc_nodedata())
 
     def get_filepath(self):
         return self._filepath
@@ -129,8 +131,9 @@ class UpdateParamsCD(object):
         self._size_snapshot = self._get_size_snapshot_header()\
                 + self.get_num_nodes() * self._get_size_nodedata()
 
-        self._offset_misc_nodedata = self._get_size_header()\
-                + self.get_num_snapshots() * self._get_size_snapshot()
+        self._offset_misc_nodedata = (self._get_size_header() +
+                                      self.get_num_snapshots() *
+                                      self._get_size_snapshot())
 
     def get_num_nodes(self):
         return self._mm_int[0]
@@ -173,8 +176,8 @@ class UpdateParamsCD(object):
         else:
             relative_update_num = update_num - self.get_update_num_first()
 
-        return self._get_size_header()\
-                + relative_update_num * self._get_size_snapshot()
+        return (self._get_size_header() +
+                relative_update_num * self._get_size_snapshot())
 
     def _get_size_header(self):
         return 4
@@ -194,4 +197,3 @@ class UpdateParamsCD(object):
 
     def _get_size_snapshot_header(self):
         return 1
-

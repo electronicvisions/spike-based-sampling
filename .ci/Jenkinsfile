@@ -12,7 +12,19 @@ try {
             checkout scm
         }
     }
-
+    stage("Flake8 check") {
+        runOnSlave(label: "frontend") {
+            inSingularity(app: "visionary-dev-tools") {
+                jesh "flake8 --tee --output flake8.log"
+            }
+            step([$class: 'WarningsPublisher',
+                  parserConfigurations: [[parserName: 'Pep8',
+                                          pattern: 'flake8.log']],
+                  unstableTotalAll: '0',
+                  usePreviousBuildAsReference: true
+                ])
+        }
+    }
     stage("Build") {
         onSlurmResource(partition: "compile") {
             inSingularity(app: "visionary-simulation") {

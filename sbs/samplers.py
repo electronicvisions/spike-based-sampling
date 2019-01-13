@@ -6,11 +6,10 @@ from . import utils
 from . import db
 from . import fit
 from . import meta
-from . import buildingblocks as bb
 from . import cutils
-from . import cells
 
 import logging
+import importlib
 import numpy as np
 from pprint import pformat as pf
 
@@ -110,7 +109,8 @@ class LIFsampler(object):
             needed.
         """
         if value is None:
-            # if the bias is theo we need calibration to give the bio equivalent
+            # if the bias is theo we need calibration to give the bio
+            # equivalent
             assert(self.is_calibrated)
             return self.bias_theo_to_bio(self.bias_theo)
         else:
@@ -218,7 +218,6 @@ class LIFsampler(object):
         else:
             return False
 
-
     def forget_calibration(self):
         """
             Unsets the calibration for this sampler.
@@ -232,8 +231,9 @@ class LIFsampler(object):
         else:
             return self.calibration.fit.v_p05 + self.bias_theo_to_bio(bias)
 
-    def calibrate(self, calibration=None, perform_pre_calibration=True,
-            **pre_calibration_parameters):
+    def calibrate(self,
+                  calibration=None, perform_pre_calibration=True,
+                  **pre_calibration_parameters):
         """
             Calibrate the sampler, using the configuration from the provided
             calibration object.
@@ -260,12 +260,13 @@ class LIFsampler(object):
 
         calibration.sim_name = self.sim_name
 
-        # by importing here we avoid importing networking stuff until we have to
+        # by importing here we avoid importing networking stuff until we have
+        # to
         from .gather_data import gather_calibration_data
 
         if perform_pre_calibration:
-            final_pre_calib = self._do_pre_calibration(calibration,
-                    **pre_calibration_parameters)
+            final_pre_calib = self._do_pre_calibration(
+                    calibration, **pre_calibration_parameters)
 
             # copy the final V_rest ranges
             calibration.V_rest_min = final_pre_calib.V_rest_min
@@ -313,13 +314,13 @@ class LIFsampler(object):
                 p_min=pmin,
                 p_max=pmax,)
 
-
         if not self.silent:
             log.info("Fitted alpha: {:.3f}".format(self.calibration.fit.alpha))
             log.info("Fitted v_p05: {:.3f} mV".format(
                 self.calibration.fit.v_p05))
 
-    def measure_free_vmem_dist(self, duration=100000., dt=0.1, burn_in_time=200.):
+    def measure_free_vmem_dist(self,
+                               duration=100000., dt=0.1, burn_in_time=200.):
         """
             Measure the distribution of the free membrane potential, given
             the parameters (attributes of VmemDistribution).
@@ -329,35 +330,36 @@ class LIFsampler(object):
         from .gather_data import gather_free_vmem_trace
 
         self.free_vmem = {
-                "trace" : gather_free_vmem_trace(
+                "trace": gather_free_vmem_trace(
                     distribution_params={
                         "duration": duration,
                         "dt": dt,
                         "burn_in_time": burn_in_time,
                         },
                     sampler=self),
-                "dt" : dt
+                "dt": dt
             }
 
     def get_calibration_source_parameters(self):
         """
-            Returns a dictionary of `np.array`s with calibration source configuration
-                rates_exc, rates_inh, weights_exc, weights_inh
+            Returns a dictionary of `np.array`s with calibration source
+            configuration rates_exc, rates_inh, weights_exc, weights_inh
         """
         assert self.is_calibrated, "No calibration supplied!"
         return self.calibration.source_config.get_distribution_parameters()
 
     def get_vmem_dist_theo(self):
         src_params = self.get_calibration_source_parameters()
-        if self.calibration.fit is None or  not self.calibration.fit.is_valid():
+        if self.calibration.fit is None or\
+                not self.calibration.fit.is_valid():
             if not self.silent:
-                log.info("Computing vmem distribution ONLY from supplied neuron "
-                     "parameters!")
+                log.info("Computing vmem distribution ONLY from supplied "
+                         "neuron parameters!")
             adj_params = {}
         else:
             if not self.silent:
-                log.debug("Computing vmem distribution with bias set to {}.".format(
-                self.bias_theo))
+                log.debug("Computing vmem distribution "
+                          "with bias set to {}.".format(self.bias_theo))
             adj_params = self.get_adjusted_parameters()
 
         return self.neuron_parameters.get_vmem_distribution_theo(
@@ -366,32 +368,12 @@ class LIFsampler(object):
             )
 
     def get_adjusted_parameters(self):
-        return { "v_rest" : self.get_v_rest_from_bias() }
+        return {"v_rest": self.get_v_rest_from_bias()}
 
     def get_pynn_model_object(self, sim=None):
         if sim is None:
             sim = self.sim
         return self.neuron_parameters.get_pynn_model_object(sim)
-
-    # this is just kept for now to make sure the other factor is correct --obreitwi, 14-02-14 20:45:13
-    # def factor_weights_bio_to_theo(self):
-        # if self.pynn_model == "IF_cond_exp":
-            # # from minimization of L2(PSP-rect) -> no more blue sky!!!
-            # # (original comment from v1 code --obreitwi, 19-12-13 21:10:08)
-            # delta_E = np.array([
-                    # self.calibration.mean - self.neuron_params.e_rev_I,
-                    # self.neuron_params.e_rev_E - self.calibration.mean
-                # ])
-            # theo_weights = weights * delta_E[is_exc_int] /\
-                # (cm - g_tot * tau[is_exc_int]) *\
-                # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
-                    # + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                # ) / self.calibration.fit.alpha * g_tot / self.neuron_params.g_l
-        # elif self.pynn_model == "IF_curr_exp":
-            # theo_weights = weights / (cm - g_tot * tau[is_exc_int]) *\
-                # (- cm / g_tot * (np.exp(- tau[is_exc_int] * g_tot / cm) - 1.)\
-                    # + tau[is_exc_int] * (np.exp(-1.) - 1.)
-                # ) / self.alpha_fiited
 
     @meta.DependsOn("calibration", "bias_theo", "bias_bio")
     def factor_weights_theo_to_bio_exc(self):
@@ -492,13 +474,12 @@ class LIFsampler(object):
         if cal_src_cfg is not None:
             self.calibration.source_config = cal_src_cfg
 
-
     ##################
     # PYNN methods #
     ##################
 
     def create(self, duration=None, population=None, create_pynn_sources=True,
-            num_neurons=1, ignore_calibration=False):
+               num_neurons=1, ignore_calibration=False):
         """
             Actually configures the supplied pyNN-object `popluation`
             (Population, PopulationView etc.) to have the loaded parameters and
@@ -517,13 +498,13 @@ class LIFsampler(object):
         if not ignore_calibration:
             assert(self.is_calibrated)
 
-        exec("import {} as sim".format(self.sim_name))
+        sim = importlib.import_module(self.sim_name)
         self.sim = sim
 
         self.population = population
         if self.population is None:
             self.population = sim.Population(num_neurons,
-                    self.get_pynn_model_object()())
+                                             self.get_pynn_model_object()())
 
         # get all parameters needed for instance
         params = self.get_pynn_parameters(adjust_v_rest=not ignore_calibration)
@@ -535,7 +516,7 @@ class LIFsampler(object):
             nest_params = self.neuron_parameters.get_nest_parameters()
             nest.SetStatus(self.population.all_cells.tolist(), nest_params)
 
-        if create_pynn_sources == True:
+        if create_pynn_sources is True:
             assert duration is not None, "Instructed to create sources "\
                     "without duration!"
             self.source_config.create_connect(
@@ -549,7 +530,7 @@ class LIFsampler(object):
 
     @meta.plot_function("calibration")
     def plot_calibration(self, plot_v_dist_theo=False, plot_vlines=True,
-            fig=None, ax=None):
+                         fig=None, ax=None):
         assert self.is_calibrated
 
         self._calc_distribution_theo()
@@ -569,13 +550,13 @@ class LIFsampler(object):
         estim_sigmoid = utils.sigmoid_trans(xdata, v_thresh, self.alpha_theo)
 
         fitted_p_on = utils.sigmoid_trans(samples_v_rest, v_p05,
-                self.calibration.fit.alpha)
+                                          self.calibration.fit.alpha)
 
         if plot_v_dist_theo:
-            ax.plot(xdata, estim_dist_v_thresh,
-                    label="est. $V_{mem}$ distribution @ $\mu = v_{thresh}$")
+            ax.plot(xdata,  estim_dist_v_thresh,
+                    label="est. $V_{mem}$ distribution @ $\\mu = v_{thresh}$")
         ax.plot(xdata, estim_cdf_v_thresh,
-                label="est. CDF of $V_{mem}$ @ $\mu =v_{thresh}$")
+                label="est. CDF of $V_{mem}$ @ $\\mu =v_{thresh}$")
         ax.plot(xdata, estim_sigmoid,
                 label="est. trf sigm w/ $p(V > V_{thresh} = p_{ON})$")
         ax.plot(samples_v_rest, fitted_p_on, label="fitted $p_{ON}$")
@@ -592,8 +573,9 @@ class LIFsampler(object):
         ax.legend(bbox_to_anchor=(1.15, .5))
 
     @meta.plot_function("calibration_residuals")
-    def plot_calibration_residuals(self, plot_v_dist_theo=False, plot_vlines=True,
-            width=4., npoints=500, fig=None, ax=None):
+    def plot_calibration_residuals(
+            self, plot_v_dist_theo=False, plot_vlines=True, width=4.,
+            npoints=500, fig=None, ax=None):
         assert self.is_calibrated
 
         self._calc_distribution_theo()
@@ -601,15 +583,10 @@ class LIFsampler(object):
         samples_v_rest = self.calibration.get_samples_v_rest()
         samples_p_on = self.calibration.samples_p_on
 
-        v_thresh = self.neuron_parameters.v_thresh
         v_p05 = self.calibration.fit.v_p05
-        std = self.dist_theo.std
-
-        xdata = np.linspace(v_thresh-width*std, v_thresh+width*std, npoints)
-
 
         fitted_p_on = utils.sigmoid_trans(samples_v_rest, v_p05,
-                self.calibration.fit.alpha)
+                                          self.calibration.fit.alpha)
 
         ax.plot(samples_v_rest, samples_p_on-fitted_p_on, label="residuals")
 
@@ -619,14 +596,15 @@ class LIFsampler(object):
         ax.legend(bbox_to_anchor=(1.15, .5))
 
     @meta.plot_function("free_vmem_dist")
-    def plot_free_vmem(self, num_bins=200, plot_vlines=True, fig=None, ax=None):
+    def plot_free_vmem(
+            self, num_bins=200, plot_vlines=True, fig=None, ax=None):
         assert self.has_free_vmem_trace
         assert self.is_calibrated
 
         volttrace = self.free_vmem["trace"]
 
         counts, bins, patches = ax.hist(volttrace, bins=num_bins, normed=True,
-                fc="None")
+                                        fc="None")
 
         ax.set_xlim(volttrace.min(), volttrace.max())
 
@@ -641,7 +619,7 @@ class LIFsampler(object):
 
         ax.axvline(mean, ls="-", c="r", label="$\\bar{v}_{theo}$")
         ax.arrow(x=mean, dx=std, y=np.exp(-.5)*max_bin, dy=0.,
-                label="$\\sigma_{v_{theo}}$")
+                 label="$\\sigma_{v_{theo}}$")
         ax.arrow(x=mean, dx=-std, y=np.exp(-.5)*max_bin, dy=0.)
 
         ax.ticklabel_format(axis="x", style='sci', useOffset=False)
@@ -665,10 +643,9 @@ class LIFsampler(object):
         ax.plot(np.arange(1, max_step_diff+1)
                 * self.free_vmem["dt"], autocorr)
 
-        ax.set_xlabel("$\Delta$ T [ms]")
+        ax.set_xlabel("$\\Delta$ T [ms]")
         ax.set_ylabel("Correlation")
         log.info("Done")
-
 
     ###########################
     # INTERNALLY USED METHODS #
@@ -686,22 +663,20 @@ class LIFsampler(object):
                 delta_E = mean - self.neuron_parameters.e_rev_I
             # from minimization of L2(PSP-rect) -> no more blue sky!!! (comment
             # from v1 code, --obreitwi, 19-12-13 19:44:27)
-            factor = self.calibration.fit.alpha * self.neuron_parameters.g_l\
-                    / g_tot * tau_r / tau /\
-                (delta_E / (cm - g_tot * tau) *\
-                    (- cm / g_tot * (np.exp(- tau_r * g_tot / cm)-1.)\
-                        + tau * (np.exp(-tau_r / tau) - 1.)\
-                    )\
-                )
+            factor = (
+                self.calibration.fit.alpha * self.neuron_parameters.g_l /
+                g_tot * tau_r / tau /
+                (delta_E / (cm - g_tot * tau) *
+                 (- cm / g_tot * (np.exp(- tau_r * g_tot / cm)-1.) +
+                  tau * (np.exp(-tau_r / tau) - 1.))))
 
         elif self.pynn_model.startswith("IF_curr_exp"):
             tau_r = self.neuron_parameters.tau_refrac
-            factor = self.calibration.fit.alpha * tau_r / tau /\
-                (1. / (cm - g_tot * tau) *\
-                    (- cm / g_tot * (np.exp(-tau_r*g_tot/cm) - 1.)\
-                        + tau * (np.exp(-tau_r / tau) - 1.)
-                    )
-                )
+            factor = (
+                self.calibration.fit.alpha * tau_r / tau /
+                (1. / (cm - g_tot * tau) *
+                    (- cm / g_tot * (np.exp(-tau_r*g_tot/cm) - 1.)
+                        + tau * (np.exp(-tau_r / tau) - 1.))))
 
         elif self.pynn_model.startswith("IF_cond_alpha"):
             tau_r = self.neuron_parameters.tau_refrac
@@ -712,30 +687,35 @@ class LIFsampler(object):
 
             tau_c = 1. / (1. / tau - 1. / tau_eff)
 
-            factor = -self.calibration.fit.alpha * self.neuron_parameters.g_l\
-                    / np.exp(1) / tau_c * tau_r * tau * tau_eff / delta_E / (
-                          tau**2 * (1- np.exp(-tau_r/tau))
-                        - tau_r * tau * np.exp(-tau_r/tau)
-                        + tau_c * (
-                              tau_eff * (np.exp(-tau_r/tau_eff)- 1 )
-                            - tau * (np.exp(-tau_r / tau) - 1)
-                          )
+            factor = (
+                -self.calibration.fit.alpha * self.neuron_parameters.g_l /
+                np.exp(1) / tau_c * tau_r * tau * tau_eff / delta_E /
+                (
+                    tau**2 * (1 - np.exp(-tau_r/tau)) +
+                    -tau_r * tau * np.exp(-tau_r/tau) +
+                    tau_c *
+                    (
+                        tau_eff * (np.exp(-tau_r/tau_eff) - 1) +
+                        -tau * (np.exp(-tau_r / tau) - 1)
                     )
+                ))
 
         elif self.pynn_model.startswith("IF_curr_alpha"):
             tau_r = self.neuron_parameters.tau_refrac
             tau_m = self.neuron_parameters.tau_m
             tau_c = 1. / (1. / tau - 1. / tau_m)
 
-            factor = -self.calibration.fit.alpha * self.neuron_parameters.g_l\
-                    / np.exp(1) / tau_c * tau * tau_m * tau_r / (
-                          tau**2 * (1- np.exp(-tau_r/tau))
-                        - tau_r * tau * np.exp(-tau_r/tau)
-                        + tau_c * (
-                              tau_m * (np.exp(-tau_r/tau_m) - 1 )
-                            - tau * (np.exp(-tau_r / tau) - 1)
-                          )
+            factor = (
+                -self.calibration.fit.alpha * self.neuron_parameters.g_l /
+                np.exp(1) / tau_c * tau * tau_m * tau_r /
+                (
+                    tau**2 * (1 - np.exp(-tau_r/tau)) +
+                    -tau_r * tau * np.exp(-tau_r/tau) + tau_c *
+                    (
+                        tau_m * (np.exp(-tau_r/tau_m) - 1) +
+                        -tau * (np.exp(-tau_r / tau) - 1)
                     )
+                ))
 
         return factor
 

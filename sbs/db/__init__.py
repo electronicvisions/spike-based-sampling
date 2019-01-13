@@ -4,20 +4,22 @@
 import numpy as np
 
 from .core import Data
-from .sources import *
+from .sources import *  # noqa: F401,F403
+from . import sources
 from ..logcfg import log
-from .neuron_parameters import *
+from .neuron_parameters import *  # noqa: F401,F403
+from . import neuron_parameters as nparams
 
 
 def setup(*args, **kwargs):
-    log.error("The database was discontinued and is without use. Please update "
-            "your script accordingly!")
+    log.error("The database was discontinued and is without use. "
+              "Please update your script accordingly!")
 
 
 class Fit(Data):
     data_attribute_types = {
-        "alpha" : float,
-        "v_p05" : float,
+        "alpha": float,
+        "v_p05": float,
     }
 
     def is_valid(self):
@@ -26,21 +28,21 @@ class Fit(Data):
 
 class Calibration(Data):
     data_attribute_types = {
-        "sim_name" : str,
-        "sim_setup_kwargs" : dict,
+        "sim_name": str,
+        "sim_setup_kwargs": dict,
 
-        "duration" : float,
-        "dt" : float,
-        "burn_in_time" : float,
+        "duration": float,
+        "dt": float,
+        "burn_in_time": float,
 
-        "V_rest_min" : float,
-        "V_rest_max" : float,
-        "num_samples" : float,
+        "V_rest_min": float,
+        "V_rest_max": float,
+        "num_samples": float,
 
-        "samples_p_on" : np.ndarray,
+        "samples_p_on": np.ndarray,
 
-        "fit" : Fit,
-        "source_config" : SourceConfiguration,
+        "fit": Fit,
+        "source_config": sources.SourceConfiguration,  #
     }
 
     def get_samples_v_rest(self):
@@ -93,22 +95,22 @@ class TsoParameters(Data):
     """
 
     data_attribute_types = {
-        "U" : float,
-        "u" : float,
-        "x" : float,
+        "U": float,
+        "u": float,
+        "x": float,
 
-        "tau_rec" : float, # if not set, will be set to tau_syn
-        "tau_fac" : float, # if not set, will be disabled
+        "tau_rec": float,  # if not set, will be set to tau_syn
+        "tau_fac": float,  # if not set, will be disabled
 
-        "weight_rescale" : float, # weights need to be set *= weight_rescale
+        "weight_rescale": float,  # weights need to be set *= weight_rescale
     }
 
     data_attribute_defaults = {
-        "U" : 1.,
-        "u" : 1.,
-        "x" : 0.,
+        "U": 1.,
+        "u": 1.,
+        "x": 0.,
 
-        "weight_rescale" : 1.,
+        "weight_rescale": 1.,
     }
 
 
@@ -119,10 +121,10 @@ class SamplerConfiguration(Data):
     """
 
     data_attribute_types = {
-        "neuron_parameters" : NeuronParameters,
-        "calibration" : Calibration,
-        "source_config" : SourceConfiguration,
-        "tso_parameters" : TsoParameters,
+        "neuron_parameters": nparams.NeuronParameters,
+        "calibration": Calibration,
+        "source_config": sources.SourceConfiguration,
+        "tso_parameters": TsoParameters,
     }
 
 
@@ -131,24 +133,24 @@ class PreCalibration(Data):
         Used by the calibration routine to find the suitable slope.
     """
     data_attribute_types = {
-        "sim_name" : str,
-        "sim_setup_kwargs" : dict,
+        "sim_name": str,
+        "sim_setup_kwargs": dict,
 
-        "duration" : float,
-        "dt" : float,
-        "burn_in_time" : float,
+        "duration": float,
+        "dt": float,
+        "burn_in_time": float,
 
-        "max_search_steps" : int,
-        "min_num_points"   : int,
+        "max_search_steps": int,
+        "min_num_points": int,
 
         "lower_bound": float,
         "upper_bound": float,
 
-        "V_rest_min" : float,
-        "V_rest_max" : float,
-        "dV" : float,
+        "V_rest_min": float,
+        "V_rest_max": float,
+        "dV": float,
 
-        "source_config" : SourceConfiguration,
+        "source_config": sources.SourceConfiguration,
     }
 
     def get_samples_v_rest(self):
@@ -162,8 +164,8 @@ class VmemDistribution(Data):
     """
 
     data_attribute_types = {
-        "mean"    : float,
-        "std"     : float,
-        "g_tot"   : float,
-        "tau_eff" : float,
+        "mean":     float,
+        "std":      float,
+        "g_tot":    float,
+        "tau_eff":  float,
     }

@@ -8,9 +8,10 @@ from . import utils
 import numpy as np
 from pprint import pformat as pf
 
+
 def sample_network(database, num_samplers=5, weights=None, biases=None,
-        neuron_id=1, sim_name="pyNN.nest", duration=1e5, savefilename=None,
-        numpy_seed=42):
+                   neuron_id=1, sim_name="pyNN.nest", duration=1e5,
+                   savefilename=None, numpy_seed=42):
     """
         Run and plot a sample network wit the given weights and biases
     """
@@ -26,8 +27,10 @@ def sample_network(database, num_samplers=5, weights=None, biases=None,
 
     if bm is None:
         # no network loaded, we need to create it
-        bm = network.BoltzmannMachine(num_samplers=num_samplers,
-                sim_name=sim_name, neuron_parameters_db_ids=neuron_id)
+        bm = network.BoltzmannMachine(
+                num_samplers=num_samplers,
+                sim_name=sim_name,
+                neuron_parameters_db_ids=neuron_id)
 
         bm.load_calibration()
 
@@ -61,15 +64,13 @@ def sample_network(database, num_samplers=5, weights=None, biases=None,
 
     log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-    log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
-
-    # log.info("Joint prob (sim, exclusive):\n"\
-            # + pf(list(bm.dist_joint_exclusive_sim.all_items())))
+    log.info("Joint prob (sim):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
     log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-    log.info("Joint prob (theo):\n"\
-            + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+    log.info("Joint prob (theo):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
     log.info("DKL marginal: {}".format(utils.dkl_sum_marginals(
         bm.dist_marginal_theo, bm.dist_marginal_sim)))
@@ -79,4 +80,3 @@ def sample_network(database, num_samplers=5, weights=None, biases=None,
 
     bm.plot_dist_marginal(save=True)
     bm.plot_dist_joint(save=True)
-

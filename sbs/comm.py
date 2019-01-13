@@ -21,6 +21,7 @@ from .logcfg import log
 
 BUFLEN = 4096
 
+
 # send object as pickle over a socket
 def send_object(socket, obj):
     obj_str = pkl.dumps(obj, protocol=-1)
@@ -84,8 +85,8 @@ class RemoteError(Exception):
         self.original_error_message = str(e)
 
         self.formatted_error = traceback.format_exception_only(E, e)
-        self.formatted_traceback =\
-                traceback.format_list(traceback.extract_tb(tb))
+        self.formatted_traceback = traceback.format_list(
+                traceback.extract_tb(tb))
 
     def write_to_log(self):
         map(log.error, it.chain(*it.imap(
@@ -122,7 +123,7 @@ class RunInSubprocess(object):
             self._func_dir = self._get_func_dir(self._func_module)
         except AttributeError:
             log.error("{} was not defined in a static module, cannot run in "
-                    "subprocess!".format(self._func_name))
+                      "subprocess!".format(self._func_name))
 
     def __call__(self, *args, **kwargs):
         if "DEBUG" in os.environ or "SBS_NO_SUBPROCESS" in os.environ:
@@ -163,7 +164,7 @@ class RunInSubprocess(object):
         return_value = None
         try:
             return_value = self._func(*args, **kwargs)
-        except:
+        except Exception:
             wrapped = RemoteError()
             wrapped.wrap_exception()
             # send exception
@@ -171,11 +172,10 @@ class RunInSubprocess(object):
         finally:
             self._send_returnvalue(socket, return_value)
 
-
     def _spawn_process(self, script_filename):
         log.debug("Spawning subprocess..")
         return sp.Popen([sys.executable, script_filename],
-                cwd=self._func_dir)
+                        cwd=self._func_dir)
 
     def _setup_socket_host(self):
         log.debug("Setting up host socket..")
@@ -233,7 +233,7 @@ class RunInSubprocess(object):
         return [self._get_transmitter(o) for o in obj]
 
     def _get_transmitter_dict(self, obj):
-        return {k: self._get_transmitter(v) for k,v in obj.iteritems()}
+        return {k: self._get_transmitter(v) for k, v in obj.iteritems()}
 
     def _send_arguments(self, socket, args, kwargs):
         log.debug("Sending arguments.")
@@ -275,7 +275,7 @@ class RunInSubprocess(object):
     def _setup_script_file(self, address, port):
         log.debug("Setting up script file.")
         script = tempfile.NamedTemporaryFile(prefix="sbs_",
-                delete=False)
+                                             delete=False)
         log.debug("Script filename {}.".format(script.name))
 
         # write preamble
@@ -295,7 +295,7 @@ class RunInSubprocess(object):
 
         # delete temporary script file when the script exits
         atexit.register(_delete_script_file, script.name,
-                warn=False, cleanup=True)
+                        warn=False, cleanup=True)
 
         return script.name
 

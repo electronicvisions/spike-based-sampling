@@ -5,11 +5,8 @@ from .logcfg import log
 
 from . import db
 
-import functools as ft
 import itertools as it
 import numpy as np
-
-from pprint import pformat as pf
 
 
 def create_sources(sim, source_config, duration):
@@ -22,7 +19,7 @@ def create_sources(sim, source_config, duration):
     # Note: poisson_generator takes "stop", spike source poisson takes
     # "duration"!
     if isinstance(source_config, db.PoissonSourceConfiguration):
-        source_params = {"start" : 0.}
+        source_params = {"start": 0.}
         source_t = sim.SpikeSourcePoisson
         source_params["duration"] = duration
 
@@ -50,8 +47,8 @@ def create_sources(sim, source_config, duration):
             local_spike_times = spike_times[spike_ids == i]
             src.spike_times = local_spike_times
             src.rate = rates[i]
-    
-        log.info("Created {} fixed spike train sources.".format(num_sources)) 
+
+        log.info("Created {} fixed spike train sources.".format(num_sources))
 
     else:
         log.error("Source configuration of type {} unkown.".format(
@@ -80,11 +77,12 @@ def connect_sources(sim, source_config, sources, target):
             idx = is_exc == i_r
 
             for i, weight in it.izip(np.where(idx)[0],
-                    source_config.weights[idx]):
+                                     source_config.weights[idx]):
                 for j in xrange(len(target)):
                     conn_list.append((i, j, np.abs(weight)))
 
-            projections[rectype] = sim.Projection(sources, target,
+            projections[rectype] = sim.Projection(
+                sources, target,
                 sim.FromListConnector(conn_list, column_names=column_names),
                 synapse_type=sim.StaticSynapse(),
                 receptor_type=rectype)
@@ -104,11 +102,12 @@ def connect_sources(sim, source_config, sources, target):
             idx = is_exc == i_r
 
             for i, weight in it.izip(np.where(idx)[0],
-                    source_config.weights[idx]):
+                                     source_config.weights[idx]):
                 for j in xrange(len(target)):
                     conn_list.append((i, j, np.abs(weight)))
 
-            projections[rectype] = sim.Projection(sources, target,
+            projections[rectype] = sim.Projection(
+                sources, target,
                 sim.FromListConnector(conn_list, column_names=column_names),
                 synapse_type=sim.StaticSynapse(),
                 receptor_type=rectype)
@@ -120,7 +119,8 @@ def connect_sources(sim, source_config, sources, target):
     return projections
 
 
-def create_nest_optimized_sources(sim, samplers, population, duration,
+def create_nest_optimized_sources(
+        sim, samplers, population, duration,
         source_model=None, source_model_kwargs=None):
     """
         DEPRECATED!
@@ -145,17 +145,19 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
     projections = {}
     # _ps = _per_sampler
     for sampler in samplers:
-        assert isinstance(sampler.calibration.source_config,
+        assert isinstance(
+                sampler.calibration.source_config,
                 db.PoissonSourceConfiguration)
 
-    num_sources_per_sampler = np.array((len(s.calibration.source_config.rates)
-        for s in samplers))
+    num_sources_per_sampler = np.array(
+            (len(s.calibration.source_config.rates) for s in samplers))
 
     # we want a mapping from each samplers sources into a large flattened
     # array
     offset_per_sampler = np.r_[np.cumsum(num_sources_per_sampler)]
+
     def id_to_sampler(idx):
-        sampler=0
+        sampler = 0
         idx -= offset_per_sampler[sampler]
         while idx > 0:
             sampler += 1
@@ -169,7 +171,8 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
     log.info("Creating {} different poisson sources.".format(
         uniq_rates.size))
     poisson_gen_t = sim.native_cell_type(source_model)
-    sources = sim.Population(uniq_rates.size,
+    sources = sim.Population(
+            uniq_rates.size,
             poisson_gen_t(start=0., stop=duration, **source_model_kwargs))
 
     sources.set(rate=uniq_rates)
@@ -178,7 +181,6 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
     # manage which source is connected to what sampler
     connections = {"exc": [], "inh": []}
     conn_type = ["inh", "exc"]
-
 
     cur_source = 0
     for i, sampler in enumerate(samplers):
@@ -191,10 +193,10 @@ def create_nest_optimized_sources(sim, samplers, population, duration,
     for ct in conn_type:
         projections[ct] = sim.Projection(
                 sources, population,
-                receptor_type={"exc":"excitatory", "inh":"inhibitory"}[ct],
+                receptor_type={"exc": "excitatory", "inh": "inhibitory"}[ct],
                 synapse_type=sim.StaticSynapse(),
-                connector=sim.FromListConnector(connections[ct],
+                connector=sim.FromListConnector(
+                    connections[ct],
                     column_names=["weight"]))
 
     return sources, projections
-

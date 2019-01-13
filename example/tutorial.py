@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # encoding: utf-8
-
 """
 
     Small informal tutorial hastily thrown together to demonstrate how to use
@@ -18,17 +17,11 @@
     For increased accuracy, please up the durations.
 """
 
-import matplotlib as mpl
-# mpl.use( "TkAgg" )
-mpl.use( "Agg" )
+from __future__ import print_function
 
-import copy
 import sys
 import numpy as np
-import multiprocessing as mp
 from pprint import pformat as pf
-import os
-import os.path as osp
 
 import sbs
 sbs.gather_data.set_subprocess_silent(False)
@@ -42,18 +35,19 @@ sim_name = "pyNN.nest"
 
 # some example neuron parameters
 neuron_params = {
-        "cm"         : .2,
-        "tau_m"      : 1.,
-        "e_rev_E"    : 0.,
-        "e_rev_I"    : -100.,
-        "v_thresh"   : -50.,
-        "tau_syn_E"  : 10.,
-        "v_rest"     : -50.,
-        "tau_syn_I"  : 10.,
-        "v_reset"    : -50.001,
-        "tau_refrac" : 10.,
-        "i_offset"   : 0.,
+        "cm": .2,
+        "tau_m": 1.,
+        "e_rev_E": 0.,
+        "e_rev_I": -100.,
+        "v_thresh": -50.,
+        "tau_syn_E": 10.,
+        "v_rest": -50.,
+        "tau_syn_I": 10.,
+        "v_reset": -50.001,
+        "tau_refrac": 10.,
+        "i_offset": 0.,
     }
+
 
 def calibration():
     """
@@ -96,14 +90,16 @@ def calibration():
     # command ("calibration.png" in the current folder):
     sampler.plot_calibration(save=True)
 
+
 def calibration_curr():
     """
         A sample calibration procedure.
     """
     # Since we only have the neuron parameters for now, lets create those first
-    nparams = sbs.db.NeuronParametersCurrentExponential(**{k:v
-            for k,v in neuron_params.iteritems() if not k.startswith("e_rev_")
-        })
+    nparams = sbs.db.NeuronParametersCurrentExponential(
+        **{k: v for k, v in neuron_params.iteritems()
+           if not k.startswith("e_rev_")
+           })
 
     # Now we create a sampler object. We need to specify what simulator we want
     # along with the neuron model and parameters.
@@ -151,7 +147,7 @@ def vmem_dist():
     sampler = sbs.samplers.LIFsampler(sampler_config, sim_name=sim_name)
 
     sampler.measure_free_vmem_dist(duration=1e6, dt=0.01,
-            burn_in_time=500.)
+                                   burn_in_time=500.)
     sampler.plot_free_vmem(save=True)
     sampler.plot_free_vmem_autocorr(save=True)
 
@@ -183,7 +179,8 @@ def sample_network():
                 "tutorial_calibration.json")
 
         bm = sbs.network.ThoroughBM(num_samplers=5,
-                sim_name=sim_name, sampler_config=sampler_config)
+                                    sim_name=sim_name,
+                                    sampler_config=sampler_config)
 
         # Set random symmetric weights.
         weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -203,8 +200,8 @@ def sample_network():
         if bm.sim_name == "pyNN.neuron":
             bm.saturating_synapses_enabled = False
 
-
-        bm.gather_spikes(duration=duration, dt=0.1, burn_in_time=500.)
+        bm.gather_spikes(
+                duration=duration, dt=0.1, burn_in_time=500.)
         # bm.save(filename)
 
     # Now we just print out some information and plot the distributions.
@@ -223,12 +220,13 @@ def sample_network():
 
     log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-    log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+    log.info("Joint prob (sim):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
     log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-    log.info("Joint prob (theo):\n"\
-            + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+    log.info("Joint prob (theo):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
     log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
         bm.dist_marginal_theo, bm.dist_marginal_sim)))
@@ -238,6 +236,7 @@ def sample_network():
 
     bm.plot_dist_marginal(save=True)
     bm.plot_dist_joint(save=True)
+
 
 def sample_network_curr():
     """
@@ -266,7 +265,8 @@ def sample_network_curr():
                 "tutorial_calibration_curr.json")
 
         bm = sbs.network.ThoroughBM(num_samplers=5,
-                sim_name=sim_name, sampler_config=sampler_config)
+                                    sim_name=sim_name,
+                                    sampler_config=sampler_config)
 
         # Set random symmetric weights.
         weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -302,12 +302,13 @@ def sample_network_curr():
 
     log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-    log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+    log.info("Joint prob (sim):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
     log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-    log.info("Joint prob (theo):\n"\
-            + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+    log.info("Joint prob (theo):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
     log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
         bm.dist_marginal_theo, bm.dist_marginal_sim)))
@@ -317,6 +318,7 @@ def sample_network_curr():
 
     bm.plot_dist_marginal(save=True)
     bm.plot_dist_joint(save=True)
+
 
 def sample_network_fixed_spikes():
     """
@@ -333,7 +335,6 @@ def sample_network_fixed_spikes():
     np.random.seed(42)
 
     # Networks can be saved outside of the database.
-    filename = "tutorial-network.pkl.gz"
     duration = 1e4
 
     # Try to load the network from file. This function returns None if no
@@ -351,7 +352,6 @@ def sample_network_fixed_spikes():
     spike_times = np.arange(1., duration, isi)
     num_spikes = spike_times.size
 
-
     sampler_config.source_config = sbs.db.FixedSpikeTrainConfiguration(
             spike_times=np.r_[spike_times, spike_times+offset],
             spike_ids=np.array([0] * num_spikes + [1] * num_spikes),
@@ -359,7 +359,8 @@ def sample_network_fixed_spikes():
         )
 
     bm = sbs.network.ThoroughBM(num_samplers=5,
-            sim_name=sim_name, sampler_config=sampler_config)
+                                sim_name=sim_name,
+                                sampler_config=sampler_config)
 
     # Set random symmetric weights.
     weights = np.random.randn(bm.num_samplers, bm.num_samplers)
@@ -397,12 +398,13 @@ def sample_network_fixed_spikes():
 
     log.info("Marginal prob (sim):\n" + pf(bm.dist_marginal_sim))
 
-    log.info("Joint prob (sim):\n" + pf(list(np.ndenumerate(bm.dist_joint_sim))))
+    log.info("Joint prob (sim):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_sim))))
 
     log.info("Marginal prob (theo):\n" + pf(bm.dist_marginal_theo))
 
-    log.info("Joint prob (theo):\n"\
-            + pf(list(np.ndenumerate(bm.dist_joint_theo))))
+    log.info("Joint prob (theo):\n" +
+             pf(list(np.ndenumerate(bm.dist_joint_theo))))
 
     log.info("DKL marginal: {}".format(sbs.utils.dkl_sum_marginals(
         bm.dist_marginal_theo, bm.dist_marginal_sim)))
@@ -414,9 +416,7 @@ def sample_network_fixed_spikes():
     bm.plot_dist_joint(save=True)
 
 
-
 if __name__ == "__main__":
-    import sys
     from inspect import isfunction, getargspec
     local_globals = globals().keys()
 
@@ -425,16 +425,16 @@ if __name__ == "__main__":
         func = globals()[f]
         if isfunction(func):
             argspec = getargspec(func)
-            if len(argspec.args) == 0\
-                        and argspec.varargs is None\
-                        and argspec.keywords is None:
+            if len(argspec.args) == 0 and\
+                    argspec.varargs is None and\
+                    argspec.keywords is None:
                 return True
         return False
 
     def show_functions():
         functions.sort()
         for f in functions:
-            print f
+            print(f)
     functions = [f for f in local_globals if is_noarg_function(f)]
     if len(sys.argv) <= 1 or sys.argv[1] == "-h":
         show_functions()
@@ -444,5 +444,5 @@ if __name__ == "__main__":
                 run = globals()[launch]
                 run()
             else:
-                print launch, "not part of functions:"
+                print(launch, "not part of functions:")
                 show_functions()
