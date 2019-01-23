@@ -112,13 +112,45 @@ class RemoteError(Exception):
 class RunInSubprocess(object):
     """
         A functor that replaces the original function.
+
+        If SBS_SINGULARITY is defined or SBS_CONTAINER_IMAGE and
+        SBS_CONTAINER_APP are defined, the subprocess is run in a singularity
+        container.
+
+        If SBS_SINGULARITY is defined, functions are run with the app
+        `visionary-simulations` in the container `/containers/stable/latest`
+        (SBS_CONTAINER_APP/SBS_CONTAINER_IMAGE can be used to overwrite this.
+
+        If functions should always be executed in containers, use
+        `RunInContainer` instead.
     """
-    def __init__(self, func):
+    def __init__(self, func,
+                 container_image=None,
+                 container_app=None,
+                 always_in_container=False):
+        """
+        The following kwargs apply to RunInContainer:
+
+        container_image: path of container image to run function in
+        container_app: name of container app in which to run function
+        always_in_container: if True we always run in container
+
+        If they are not given, all RunInSubprocess-decorated functions can be
+        run in a singularity container by setting SBS_SINGULARITY and
+        specifying SBS_CONTAINER_IMAGE / SBS_CONTAINER_APP.
+
+        Note: singularity binary needs to be in path!
+        """
         self._func = func
         self.__doc__ = getattr(func, "__doc__", "")
 
         self._func_name = func.func_name
         self._func_module = func.__module__
+
+        self._container_image = container_image
+        self._container_app = container_app
+        self._always_in_container = always_in_container
+
         try:
             self._func_dir = self._get_func_dir(self._func_module)
         except AttributeError:
@@ -172,10 +204,47 @@ class RunInSubprocess(object):
         finally:
             self._send_returnvalue(socket, return_value)
 
+    def _check_run_in_container(self):
+        if self._always_in_container:
+            return True
+
+        if "SBS_SINGULARITY" in os.environ:
+            return True
+
+        if ("SBS_CONTAINER_IMAGE" in os.environ
+                and "SBS_CONTAINER_APP" in os.environ):
+            return True
+
+    def _get_args_container(self, script_filename):
+        if self._container_image is None:
+            container = os.environ.get("SBS_CONTAINER_IMAGE",
+                                       "/containers/stable/latest")
+        else:
+            container = self._container_path
+
+        if not osp.isfile(container):
+            raise IOError("Container image path does not exist: {}".format(
+                          container))
+
+        if self._container_app is None:
+            app = os.environ.get("SBS_CONTAINER_APP",
+                                 "visionary-simulation")
+        else:
+            app = self._container_app
+
+        return ["singularity", "exec", "--app", app,
+                "-B", self._func_dir, container,
+                "python", script_filename]
+
     def _spawn_process(self, script_filename):
-        log.debug("Spawning subprocess..")
-        return sp.Popen([sys.executable, script_filename],
-                        cwd=self._func_dir)
+        if self._check_run_in_container():
+            log.debug("Spawning subprocess in container..")
+            args = self._get_args_container(script_filename)
+        else:
+            log.debug("Spawning in subprocess..")
+            args = [sys.executable, script_filename]
+
+        return sp.Popen(args, cwd=self._func_dir)
 
     def _setup_socket_host(self):
         log.debug("Setting up host socket..")
@@ -298,6 +367,24 @@ class RunInSubprocess(object):
                         warn=False, cleanup=True)
 
         return script.name
+
+
+class RunInContainer(object):
+    """
+        Wrapper to execute given function in a container image explicitly.
+
+        Per default, functions are executed in `visionary-simulation` in
+        `/containers/stable/latest`.
+    """
+    def __init__(self, container_image=None, container_app=None):
+        self._container_image = container_image
+        self._container_app = container_app
+
+    def __call__(self, func):
+        return RunInSubprocess(func,
+                               container_image=self._container_image,
+                               container_app=self._container_app,
+                               always_in_container=True)
 
 
 # utility functions
