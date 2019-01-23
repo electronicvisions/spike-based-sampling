@@ -1,12 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
-"""
-    Some tests based on tutorial functions…
-"""
-
 import unittest
-
 import numpy as np
 
 import sbs
