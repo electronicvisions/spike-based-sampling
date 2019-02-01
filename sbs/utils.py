@@ -21,6 +21,8 @@ except ImportError:
 
 from .logcfg import log
 
+from . import cutils
+
 __all__ = [
     "IF_cond_exp_distribution",
     "IF_cond_alpha_distribution",
@@ -36,6 +38,7 @@ __all__ = [
     "get_eta",
     "get_elapsed_str",
     "get_ordered_spike_idx",
+    "get_pairwise_correlations",
     "get_random_string",
     "get_sha1",
     "get_time_tuple",
@@ -297,6 +300,58 @@ def fill_diagonal(array, value=0):
     array[indices] = value
 
     return array
+
+
+def get_pairwise_correlations(
+        spike_times, tau_refs, duration, ignore_until=0.):
+    """Simple wrapper around cutils.get_pairwise_correlations.
+
+    Args:
+        spike_times ([np.arrays]): Spike times of each neuron.
+
+        tau_refs ([float]): List/numpy array of refractory  periods of each
+                            neuron. Can also be a scalar.
+
+        duration (float): Simulation duration.
+
+        ignore_until (float): Only start recording after `ignore_until` has
+                              passed, this allows the network to be in an
+                              arbitrary state prior to measuring correlations.
+
+        NOTE: Pairwise correlations will be calculated in the interval
+              (ignore_until, duration)!
+
+    Returns:
+        np.array of shape (N, N) containing the pairwise correlations.
+    """
+    spike_ids = []
+
+    for i, spikes in enumerate(spike_times):
+        spike_ids.append(np.ones(len(spikes), dtype=np.int) * i)
+
+    num_neurons = len(spike_times)
+
+    spike_ids = np.hstack(spike_ids)
+    spike_times = np.hstack(spike_times)
+
+    idx = np.argsort(spike_times)
+    spike_ids = spike_ids[idx]
+    spike_times = spike_times[idx]
+
+    if np.isscalar(tau_refs):
+        tau_refs = np.ones(num_neurons, dtype=np.float64) * tau_refs
+    elif len(tau_refs) != num_neurons:
+        raise ValueError("Number of tau_refs ({}) differs from the number of "
+                         "neurons ({}).".format(len(tau_refs), num_neurons))
+
+    # ensure correct alignment for cython code
+    tau_refs = np.require(tau_refs, dtype=np.float64, requirements="C")
+    spike_ids = np.require(spike_ids, dtype=np.int, requirements="C")
+    spike_times = np.require(spike_times, dtype=np.float64, requirements="C")
+
+    return cutils.get_pairwise_correlations(spike_ids, spike_times,
+                                            np.arange(num_neurons),
+                                            tau_refs, duration, ignore_until)
 
 
 def get_urandom_num(n=1, BYTE_LEN=8):

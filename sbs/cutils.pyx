@@ -232,6 +232,7 @@ def autocorr(np.ndarray[np.float64_t, ndim=1] array, uint max_step_diff):
 
     return joints
 
+
 @cython.boundscheck(False)
 def get_bm_joint_sim(
         np.ndarray[np.int_t, ndim=1] spike_ids,
@@ -332,47 +333,78 @@ def get_bm_joint_sim(
 
 
 @cython.boundscheck(False)
-def generate_states_wrong(
+@cython.wraparound(False)
+def get_pairwise_correlations(
         np.ndarray[np.int_t, ndim=1] spike_ids,
         np.ndarray[np.float64_t, ndim=1] spike_times,
-        np.ndarray[np.float64_t, ndim=1] tau_refrac_pss, # per selected sampler
-        uint num_samplers,
-        double time_per_sample,
+        np.ndarray[np.int_t, ndim=1] sampler_idx,
+        np.ndarray[np.float64_t, ndim=1] tau_refrac_pss,  # per selected
+                                                          # sampler
         double duration,
-        ):
-    assert spike_ids.shape[0] == spike_times.shape[0]
+        double ignore_until,  # only start calculating correlations at
+                              # this time
+    ):
+    """Get the pairwise correlations for all supplied samplers.
 
-    cdef uint num_samples = <uint>(duration / time_per_sample)
+    Args:
+        spike_ids: spike_id[i] marks the id of the spike in spike_times[i].
+
+        spike_times: All spike times. spike_id[i] marks the id of the spike in
+                     spike_times[i]. Note: spike_times have to be sorted!
+
+        sampler_idx: Only consider spikes from ids present in this array.
+                     Should be np.arange(num_samplers) by default!
+
+        tau_refrac_pss: tau_refrac per selected sampler; the individual
+                        tau_refrac times for each sampler.
+
+        duration: Until what time should spike times be considered.
+
+        ignore_until: From what starting time should states of the network be
+                      recorded for the final correlation score. The state of
+                      the network is always [0..0] at t=0 and then changes
+                      according to the given spikes. However, correlations will
+                      only start to be recorded once `ignore_until` is reached.
+                      This way we can set the initial state of the network.
+
+    Returns:
+        Numpy array of shape (N, N).
+    """
+    sampler_idx.sort()
+    assert spike_ids.shape[0] == spike_times.shape[0]
 
     cdef double current_time = 0.
     cdef uint i_spike = 0
-    cdef uint i_sample = 0
     cdef uint i, sampler_id
-    cdef uint i_inactivation
     cdef double next_inactivation, next_spike, time_step
-    cdef double next_sample = time_per_sample
     cdef uint num_spikes = spike_ids.shape[0]
 
+    cdef uint num_selected = sampler_idx.shape[0]
+    cdef long* sampler_idx_ptr = <long*> sampler_idx.data
+
     cdef np.ndarray[np.float64_t, ndim=1] tau_sampler =\
-            np.zeros((num_samplers,), dtype=np.float64)
+            np.zeros((num_selected,), dtype=np.float64)
     cdef double* tau_sampler_ptr = <double*> tau_sampler.data
 
-    cdef np.ndarray[np.int_t, ndim=2] samples = np.zeros(
-            (num_samples, num_samplers), dtype=np.int)
+    cdef bool is_spike
 
-    cdef int event_type
-    cdef int EVENT_SPIKE=0, EVENT_INACTIVATION=1, EVENT_SAMPLE=2
+    # store the current configuration
+    cdef np.ndarray[np.float64_t, ndim=1] current_state =\
+        np.zeros((num_selected,), dtype=np.float64)
 
-    # since getting the joint for too many samplers is infeasable
-    # we can store 
-    cdef np.ndarray[np.int_t, ndim=1] current_state = np.zeros((num_samplers,),
-            dtype=np.int)
+    # store the total correlations
+    cdef np.ndarray[np.float64_t, ndim=2] correlations =\
+        np.zeros((num_selected, num_selected), dtype=np.float64)
 
     while current_time < duration:
+        # skip all spikes from samplers we do not care about
+        while i_spike < num_spikes and not check_value_in_long_array(
+                spike_ids[i_spike], num_selected, sampler_idx_ptr):
+            i_spike += 1
 
         # find next activation
         next_inactivation = np.inf
-        for i in range(num_samplers):
+        for i in range(num_selected):
             if tau_sampler_ptr[i] > 0.\
                     and tau_sampler_ptr[i] < next_inactivation:
                 next_inactivation = tau_sampler_ptr[i]
@@ -384,53 +416,58 @@ def generate_states_wrong(
 
         # check out if the next event is a spike or a simple inactivation of
         # a sampler
-
-        if next_spike < next_inactivation and next_spike < next_sample:
-            if i_spike < num_spikes:
-                event_type = EVENT_SPIKE
-            else:
-                event_type = EVENT_INACTIVATION
+        if next_inactivation > next_spike:
+            is_spike = i_spike < num_spikes
             time_step = next_spike
-
-        elif next_inactivation < next_spike and next_inactivation < next_sample:
-            event_type = EVENT_INACTIVATION
+        else:
+            is_spike = False
             time_step = next_inactivation
 
-        else:
-            event_type = EVENT_SAMPLE
-            time_step = next_sample
-            next_sample += time_per_sample
+        if current_time < ignore_until:
+            # check if ignore_until is the next event to handle
+            time_till_record_start = (ignore_until - current_time)
 
-        for i in range(num_samplers):
+            if time_step > time_till_record_start:
+                # only advance till start point of recording
+                time_step = time_till_record_start
+                # the next spike could only be after we start recording
+                is_spike = False
+
+        for i in range(num_selected):
+            if tau_sampler[i] > 0.:
+                current_state[i] = 1.0
+            else:
+                current_state[i] = 0.0
+
+        # only calculate correlations after we passed the recording offset
+        if current_time >= ignore_until:
+            # compute which neurons are active toegether
+            current_correlation = np.outer(current_state.T, current_state)
+            # weight with current time_step and add to correlations
+            correlations += (current_correlation * time_step)
+
+        for i in range(num_selected):
             tau_sampler[i] -= time_step
-            if tau_sampler[i] <= 0:
-                current_state[i] = 0
 
-        next_sample -= time_step
-
-        if event_type == EVENT_SPIKE:
+        if is_spike:
             sampler_id = spike_ids[i_spike]
 
+            for i in range(num_selected):
+                if sampler_idx_ptr[i] == sampler_id:
+                    sampler_id = i
+                    break
             # adjust current spike
             tau_sampler[sampler_id] = tau_refrac_pss[sampler_id]
-
-            current_state[sampler_id] = 1
 
             # find next spike
             i_spike += 1
 
-        if event_type == EVENT_SAMPLE:
-            samples[i_sample] = current_state
-            i_sample += 1
-            next_spike = time_step
-
         current_time += time_step
-        # print "tau",
-        # for i in range(num_selected):
-            # print tau_sampler_ptr[i],
-        # print ""
 
-    return samples
+    # normalize with duration
+    correlations /= (duration - ignore_until)
+    return correlations
+
 
 @cython.boundscheck(False)
 def generate_states(
