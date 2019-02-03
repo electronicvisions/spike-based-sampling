@@ -1,0 +1,7 @@
+*.pyc
+*.png
+*.json
+SpikeBasedSampling.egg-info/
+build/
+dist/
+installed/
