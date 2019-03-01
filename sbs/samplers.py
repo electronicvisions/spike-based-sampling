@@ -549,7 +549,7 @@ class LIFsampler(object):
         estim_cdf_v_thresh = utils.erfm(xdata, v_thresh, std)
         estim_sigmoid = utils.sigmoid_trans(xdata, v_thresh, self.alpha_theo)
 
-        fitted_p_on = utils.sigmoid_trans(samples_v_rest, v_p05,
+        fitted_p_on = utils.sigmoid_trans(xdata, v_p05,
                                           self.calibration.fit.alpha)
 
         if plot_v_dist_theo:
@@ -559,7 +559,7 @@ class LIFsampler(object):
                 label="est. CDF of $V_{mem}$ @ $\\mu =v_{thresh}$")
         ax.plot(xdata, estim_sigmoid,
                 label="est. trf sigm w/ $p(V > V_{thresh} = p_{ON})$")
-        ax.plot(samples_v_rest, fitted_p_on, label="fitted $p_{ON}$")
+        ax.plot(xdata, fitted_p_on, label="fitted $p_{ON}$")
         ax.plot(samples_v_rest, samples_p_on, marker="x", ls="", c="b",
                 label="measured $p_{ON}$")
 
