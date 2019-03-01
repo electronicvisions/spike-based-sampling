@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 """
-    Some tests based on tutorial functions…
+    Some tests based on tutorial functions
 """
 
 import unittest
