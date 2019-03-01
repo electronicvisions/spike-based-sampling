@@ -55,7 +55,44 @@ class NeuronParameters(Data):
         return getattr(sim, self.pynn_model)
 
 
-class NeuronParametersConductanceExponential(NeuronParameters):
+class NeuronParametersTauRefracVirtual(NeuronParameters):
+    """
+        NeuronParameters with the ability to specify a refractory time that is
+        used when computing activities during calibration.
+
+        TODO: There should be an automatic procedure to measure the effective
+        tau_refrac.
+    """
+    data_attribute_types = {
+            "tau_refrac_virtual": float,
+        }
+
+    def get_pynn_parameters(self, adjusted_parameters=None):
+        dikt = super(
+            NeuronParametersTauRefracVirtual, self).get_pynn_parameters(
+                adjusted_parameters)
+
+        # tau_refrac_virtual is not a PyNN parameter
+        if "tau_refrac_virtual" in dikt:
+            del dikt["tau_refrac_virtual"]
+
+        return dikt
+
+    @property
+    def tau_refrac_calibration(self):
+        """Returns virtual refractory time if it is specified, otherwise the
+        regular tau_refrac."""
+
+        tau_refrac = getattr(self, "tau_refrac_virtual", None)
+
+        if tau_refrac is None:
+            tau_refrac = self.tau_refrac
+
+        return tau_refrac
+
+
+class NeuronParametersConductanceExponential(
+        NeuronParametersTauRefracVirtual):
     pynn_model = "IF_cond_exp"
 
     data_attribute_types = {
@@ -73,7 +110,7 @@ class NeuronParametersConductanceExponential(NeuronParameters):
     }
 
 
-class NeuronParametersConductanceAlpha(NeuronParameters):
+class NeuronParametersConductanceAlpha(NeuronParametersTauRefracVirtual):
     pynn_model = "IF_cond_alpha"
 
     data_attribute_types = {
@@ -91,7 +128,7 @@ class NeuronParametersConductanceAlpha(NeuronParameters):
     }
 
 
-class NeuronParametersCurrentExponential(NeuronParameters):
+class NeuronParametersCurrentExponential(NeuronParametersTauRefracVirtual):
     pynn_model = "IF_curr_exp"
 
     data_attribute_types = {
@@ -107,7 +144,7 @@ class NeuronParametersCurrentExponential(NeuronParameters):
     }
 
 
-class NeuronParametersCurrentAlpha(NeuronParameters):
+class NeuronParametersCurrentAlpha(NeuronParametersTauRefracVirtual):
     pynn_model = "IF_curr_alpha"
 
     data_attribute_types = {

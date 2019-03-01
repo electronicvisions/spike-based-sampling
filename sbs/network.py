@@ -217,7 +217,7 @@ class BoltzmannMachineBase(object):
 
             Note: Assumes they do not change over the course of simulation!
         """
-        return np.array([s.neuron_parameters.tau_refrac
+        return np.array([s.neuron_parameters.tau_refrac_calibration
                         for s in self.samplers])
 
     @meta.DependsOn()
@@ -584,7 +584,8 @@ class ThoroughBM(BoltzmannMachineBase):
                 spike_times=np.array(self.selected_sampler_spikes["t"] / dt,
                                      dtype=int),
                 tau_refrac_pss=np.array(
-                    [int(self.samplers[i].neuron_parameters.tau_refrac / dt)
+                    [int(self.samplers[
+                        i].neuron_parameters.tau_refrac_calibration / dt)
                      for i in self.selected_sampler_idx]),
                 num_samplers=len(self.selected_sampler_idx),
                 steps_per_sample=steps_per_sample,
@@ -662,7 +663,8 @@ class ThoroughBM(BoltzmannMachineBase):
         for i, idx in enumerate(self.selected_sampler_idx):
             sampler = self.samplers[idx]
             spikes = self.spike_data["spiketrains"][idx]
-            marginals[i] = len(spikes) * sampler.neuron_parameters.tau_refrac
+            marginals[i] = len(spikes)\
+                * sampler.neuron_parameters.tau_refrac_calibration
 
         marginals /= self.spike_data["duration"]
 
@@ -672,8 +674,8 @@ class ThoroughBM(BoltzmannMachineBase):
     def dist_joint_sim(self):
         # tau_refrac per selected sampler
         tau_refrac_pss = np.array(
-                [self.samplers[i].neuron_parameters.tau_refrac
-                 for i in self.selected_sampler_idx])
+            [self.samplers[i].neuron_parameters.tau_refrac_calibration
+             for i in self.selected_sampler_idx])
 
         spike_ids = np.require(self.ordered_spikes["id"], requirements=["C"])
         spike_times = np.require(self.ordered_spikes["t"], requirements=["C"])

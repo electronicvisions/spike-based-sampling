@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 # encoding: utf-8
 
 """
@@ -127,6 +128,51 @@ class TestBasics(unittest.TestCase):
         sampler.write_config("test-calibration-curr")
 
         sampler.plot_calibration(prefix="test_basics_curr-", save=True)
+
+    def test_03_calibration_virtual_t_ref(self):
+        """Calibrate with virtual t_ref"""
+        # Since we only have the neuron parameters for now, lets create those
+        # first
+        nparams = sbs.db.NeuronParametersConductanceExponential(
+                **neuron_params)
+
+        # used in calibration
+        nparams.tau_refrac_virtual = 12.0
+
+        # Now we create a sampler object. We need to specify what simulator we
+        # want along with the neuron model and parameters.
+        # The sampler accepts both only the neuron parameters or a full sampler
+        # configuration as argument.
+        sampler = sbs.samplers.LIFsampler(nparams, sim_name=sim_name)
+
+        # Now onto the actual calibration. For this we only need to specify our
+        # source configuration and how long/with how many samples we want to
+        # calibrate.
+
+        source_config = sbs.db.PoissonSourceConfiguration(
+                rates=np.array([3000.] * 2),
+                weights=np.array([-1., 1]) * 0.001,
+            )
+
+        # We need to specify the remaining calibration parameters
+        calibration = sbs.db.Calibration(
+                duration=1e4, num_samples=150, burn_in_time=500., dt=0.01,
+                source_config=source_config,
+                sim_name=sim_name,
+                sim_setup_kwargs={"spike_precision": "on_grid"})
+        # Do not forget to specify the source configuration!
+
+        # here we could give further kwargs for the pre-calibration phase when
+        # the slope of the sigmoid is searched for
+        sampler.calibrate(calibration)
+
+        # Afterwards, we need to save the calibration.
+        sampler.write_config("test-calibration-cond-virtual_tau_refrac")
+
+        # Finally, the calibration function can be plotted using the following
+        # command ("calibration.png" in the current folder):
+        sampler.plot_calibration(
+                prefix="test_basics_cond_virtual_tau_refrace-", save=True)
 
     def test_vmem_dist(self):
         """

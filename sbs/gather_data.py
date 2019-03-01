@@ -227,7 +227,7 @@ def gather_calibration_data(
     num_spikes = np.array([(s > burn_in_time).sum() for s in spiketrains],
                           dtype=int)
 
-    samples_p_on = num_spikes * neuron_params.tau_refrac / duration
+    samples_p_on = num_spikes * neuron_params.tau_refrac_calibration / duration
 
     if log.getEffectiveLevel() <= logging.DEBUG:
         log.debug("Samples p_on:\n{}".format(pf(samples_p_on)))

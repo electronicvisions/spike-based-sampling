@@ -656,7 +656,7 @@ class LIFsampler(object):
         cm = self.neuron_parameters.cm
 
         if self.pynn_model.startswith("IF_cond_exp"):
-            tau_r = self.neuron_parameters.tau_refrac
+            tau_r = self.neuron_parameters.tau_refrac_calibration
             if is_excitatory:
                 delta_E = self.neuron_parameters.e_rev_E - mean
             else:
@@ -671,7 +671,7 @@ class LIFsampler(object):
                   tau * (np.exp(-tau_r / tau) - 1.))))
 
         elif self.pynn_model.startswith("IF_curr_exp"):
-            tau_r = self.neuron_parameters.tau_refrac
+            tau_r = self.neuron_parameters.tau_refrac_calibration
             factor = (
                 self.calibration.fit.alpha * tau_r / tau /
                 (1. / (cm - g_tot * tau) *
@@ -679,7 +679,7 @@ class LIFsampler(object):
                         + tau * (np.exp(-tau_r / tau) - 1.))))
 
         elif self.pynn_model.startswith("IF_cond_alpha"):
-            tau_r = self.neuron_parameters.tau_refrac
+            tau_r = self.neuron_parameters.tau_refrac_calibration
             if is_excitatory:
                 delta_E = self.neuron_parameters.e_rev_E - mean
             else:
@@ -701,7 +701,7 @@ class LIFsampler(object):
                 ))
 
         elif self.pynn_model.startswith("IF_curr_alpha"):
-            tau_r = self.neuron_parameters.tau_refrac
+            tau_r = self.neuron_parameters.tau_refrac_calibration
             tau_m = self.neuron_parameters.tau_m
             tau_c = 1. / (1. / tau - 1. / tau_m)
 
