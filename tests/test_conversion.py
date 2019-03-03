@@ -58,3 +58,15 @@ class TestSimpleWeightTranslation(unittest.TestCase):
         # point
         self.assertTrue(np.allclose(weights, weights_theo))
         self.assertTrue(np.allclose(biases, biases_theo))
+
+    def test_array_like_calibration(self):
+        sampler_config = "sample-config-array-like"
+
+        sbs.simple.calibration(
+                self.sample_neuron_parameters,
+                sampler_config,
+                noise_rate_exc=np.array([300., 400.]),
+                noise_rate_inh=[250., 800.],
+                noise_weight_exc=[0.001, 0.0005],
+                noise_weight_inh=np.array([-0.001, -0.0005]),
+                sim_duration_ms=1e3)

@@ -72,8 +72,8 @@ def calibration(parameters_neuron, filename_output, plot_calibration=False,
     sampler = sbs.samplers.LIFsampler(neuron, sim_name=simulator)
 
     source_config = sbs.db.PoissonSourceConfiguration(
-            rates=np.array([noise_rate_inh, noise_rate_exc]),
-            weights=np.array([noise_weight_inh, noise_weight_exc]),
+            rates=np.r_[noise_rate_inh, noise_rate_exc],
+            weights=np.r_[noise_weight_inh, noise_weight_exc],
         )
 
     calibration = sbs.db.Calibration(
