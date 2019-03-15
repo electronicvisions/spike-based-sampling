@@ -41,6 +41,18 @@ try {
                      unstableTotalAll: '0'
         }
     }
+    stage("Build model-visionary-nest") {
+        runOnSlave(label: "frontend") {
+            inSingularity(app: "visionary-simulation") {
+                jesh "bash -x .ci/stages/visionary-nest-checkout.sh"
+            }
+        }
+        onSlurmResource(partition: "jenkins") {
+            inSingularity(app: "visionary-simulation") {
+                jesh "cd model-visionary-nest && bash -x .ci/stages/build.sh"
+            }
+        }
+    }
     stage("Run tests") {
         onSlurmResource(partition: "jenkins") {
             inSingularity(app: "visionary-dev-tools") {

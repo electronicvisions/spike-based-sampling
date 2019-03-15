@@ -1,7 +1,7 @@
 #!/bin/bash
 set -Eeuxo pipefail
 
-SCRIPTPATH="$(realpath -P "${BASH_SOURCE[0]}")"
+SCRIPTPATH="$(realpath -m "${BASH_SOURCE[0]}")"
 source "$(dirname "${SCRIPTPATH}")/commons.sh"
 
 mkdir -p "${PATH_INSTALL_FULL}"

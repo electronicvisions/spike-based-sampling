@@ -5,7 +5,11 @@ SCRIPTPATH="$(realpath -P "${BASH_SOURCE[0]}")"
 source "$(dirname "${SCRIPTPATH}")/commons.sh"
 
 # make sure py-sbs is not loaded for test execution
-source <(spack module loads -r -x py-sbs visionary-simulation~dev)
+source <(spack module loads -r -x py-sbs -x visionary-nest \
+         visionary-simulation~dev)
+
+# assert that visionarymodule can be loaded
+(unset NEST_MODULES; python -c "import nest; nest.Install('visionarymodule')")
 
 pushd tests
 nosetests --with-xunit --xunit-file=test_results.xml . || exit 0
