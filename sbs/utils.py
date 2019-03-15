@@ -3,6 +3,7 @@
 
 from __future__ import print_function
 
+import multiprocessing as mp
 import numpy as np
 from scipy.special import erf
 import string
@@ -37,6 +38,7 @@ __all__ = [
     "filter_dict",
     "format_time",
     "gauss",
+    "get_default_setup_kwargs",
     "get_eta",
     "get_elapsed_str",
     "get_ordered_spike_idx",
@@ -718,3 +720,29 @@ def group_identical_parameters(parameters, num_elements=None):
         if elem_indices.sum() > 0:
             yield elem_indices.nonzero()[0], {
                     k: uniq_vals[k][i] for k, i in zip(arg_names, indices)}
+
+
+def get_default_setup_kwargs(sim_name="nest", max_cores=8):
+    """Useful default nest setup kwargs for usage in tests etc.
+
+    Args:
+        sim_name: str
+            Name of the simulator
+
+        max_cores: int or None
+            Number of cores to use in nest (or all available if None)
+
+    Returns:
+        Dictionary to pass as `sim_setup_kwargs`.
+    """
+    if max_cores is None:
+        max_cores = mp.cpu_count()
+
+    kwargs = {
+            "nest":  {
+                "spike_precision": "on_grid",
+                "threads": min(max_cores, mp.cpu_count()),
+                },
+        }.get(sim_name, {})
+
+    return kwargs

@@ -78,7 +78,7 @@ class TestNN(unittest.TestCase):
                 duration=1e4, num_samples=150, burn_in_time=500., dt=0.01,
                 source_config=source_config,
                 sim_name=sim_name,
-                sim_setup_kwargs={"spike_precision": "on_grid"})
+                sim_setup_kwargs=sbs.utils.get_default_setup_kwargs(sim_name))
         # Do not forget to specify the source configuration!
 
         # here we could give further kwargs for the pre-calibration phase when

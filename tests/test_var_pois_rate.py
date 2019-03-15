@@ -72,8 +72,9 @@ class TestVarPoisRate(unittest.TestCase):
         bm.biases_theo = np.random.randn(bm.num_samplers)
 
         # Sample the network and save it.
-        bm.gather_spikes(duration=1e5,  burn_in_time=500., dt=0.1,
-                         sim_setup_kwargs={"spike_precision": "on_grid"})
+        bm.gather_spikes(
+                duration=1e5,  burn_in_time=500., dt=0.1,
+                sim_setup_kwargs=sbs.utils.get_default_setup_kwargs(sim_name))
 
         log.info("Weights (theo):\n" + pf(bm.weights_theo))
         log.info("Biases (theo):\n" + pf(bm.biases_theo))
@@ -132,8 +133,9 @@ class TestVarPoisRate(unittest.TestCase):
         bm.biases_theo = np.random.randn(bm.num_samplers)
 
         # Sample the network and save it.
-        bm.gather_spikes(duration=1e5,  burn_in_time=500., dt=0.1,
-                         sim_setup_kwargs={"spike_precision": "on_grid"})
+        bm.gather_spikes(
+                duration=1e5,  burn_in_time=500., dt=0.1,
+                sim_setup_kwargs=sbs.utils.get_default_setup_kwargs(sim_name))
 
         log.info("Weights (theo):\n" + pf(bm.weights_theo))
         log.info("Biases (theo):\n" + pf(bm.biases_theo))

@@ -31,9 +31,11 @@ class TestSimpleWeightTranslation(unittest.TestCase):
         # quick calibration because we do not care about quality
         sampler_config = "sample-config"
 
-        sampler = sbs.simple.calibration(self.sample_neuron_parameters,
-                                         sampler_config,
-                                         sim_duration_ms=1e3)
+        sampler = sbs.simple.calibration(
+                self.sample_neuron_parameters,
+                sampler_config,
+                sim_duration_ms=1e3,
+                sim_setup_kwargs=sbs.utils.get_default_setup_kwargs())
 
         num_samplers = 10
 

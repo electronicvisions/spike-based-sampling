@@ -20,6 +20,7 @@
 from __future__ import print_function
 
 import sys
+import multiprocessing as mp
 import numpy as np
 from pprint import pformat as pf
 
@@ -76,7 +77,8 @@ def calibration():
             duration=1e5, num_samples=150, burn_in_time=500., dt=0.01,
             source_config=source_config,
             sim_name=sim_name,
-            sim_setup_kwargs={"spike_precision": "on_grid"})
+            sim_setup_kwargs={"spike_precision": "on_grid",
+                              "threads": mp.cpu_count()})
     # Do not forget to specify the source configuration!
 
     # here we could give further kwargs for the pre-calibration phase when the
@@ -121,7 +123,8 @@ def calibration_curr():
             duration=1e5, num_samples=150, burn_in_time=500., dt=0.01,
             source_config=source_config,
             sim_name=sim_name,
-            sim_setup_kwargs={"spike_precision": "on_grid"})
+            sim_setup_kwargs={"spike_precision": "on_grid",
+                              "threads": mp.cpu_count()})
     # Do not forget to specify the source configuration!
 
     # here we could give further kwargs for the pre-calibration phase when the
@@ -465,7 +468,8 @@ def sample_network_var_poisson_rate():
 
     # Sample the network and save it.
     bm.gather_spikes(duration=1e5,  burn_in_time=500., dt=0.1,
-                     sim_setup_kwargs={"spike_precision": "on_grid"})
+                     sim_setup_kwargs={"spike_precision": "on_grid",
+                                       "threads": mp.cpu_count()})
     bm.save(filename)
 
     # You can load back the saved network via
