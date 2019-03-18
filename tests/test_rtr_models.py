@@ -13,20 +13,12 @@ log = sbs.log
 sim_name = "pyNN.nest"
 
 
-def check_nest_model_available(model):
-    try:
-        import nest
-        return model in nest.Models()
-    except ImportError:
-        return False
-
-
 def check_rtr_model_cond():
-    return check_nest_model_available("iaf_cond_exp_rtr")
+    return sbs.utils.ensure_visionary_nest_model_available("iaf_cond_exp_rtr")
 
 
 def check_rtr_model_curr():
-    return check_nest_model_available("iaf_psc_exp_rtr")
+    return sbs.utils.ensure_visionary_nest_model_available("iaf_psc_exp_rtr")
 
 
 class TestRTRModels(unittest.TestCase):

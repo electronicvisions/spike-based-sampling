@@ -12,6 +12,11 @@ log = sbs.log
 sim_name = "pyNN.nest"
 
 
+def check_mpg():
+    return sbs.utils.ensure_visionary_nest_model_available(
+        "multi_poisson_generator")
+
+
 class TestVarPoisRate(unittest.TestCase):
     def setUp(self):
         import nest
@@ -19,6 +24,9 @@ class TestVarPoisRate(unittest.TestCase):
         if "multi_poisson_generator" not in nest.Models():
             nest.Install("visionarymodule")
 
+    @unittest.skipUnless(check_mpg(),
+                         "requires multi poisson generator models from "
+                         "visionary NEST module")
     def test_sample_network_var_poisson_rate_cond(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
@@ -79,6 +87,9 @@ class TestVarPoisRate(unittest.TestCase):
 
         bm.selected_sampler_idx = range(bm.num_samplers)
 
+    @unittest.skipUnless(check_mpg(),
+                         "requires multi poisson generator models from "
+                         "visionary NEST module")
     def test_sample_network_var_poisson_rate_curr(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in

@@ -27,6 +27,7 @@ __all__ = [
     "IF_curr_exp_distribution",
     "IF_curr_alpha_distribution",
     "check_list_array",
+    "ensure_visionary_nest_model_available",
     "erfm",
     "fill_diagonal",
     "filter_dict",
@@ -559,3 +560,22 @@ def run_with_eta(sim, duration, num_steps=20):
         log.info("Elapsed: {:<32} ETA: {}".format(
             get_elapsed_str(t_start),
             get_eta_str(t_start, i+1, num_steps)))
+
+
+def ensure_visionary_nest_model_available(model):
+    """Try to load nest and try to install 'visionarymodule'.
+    Return value indicates if nest and the specified model is available
+    afterwards.
+    """
+    try:
+        import nest
+    except ImportError:
+        return False
+
+    if model not in nest.Models():
+        try:
+            nest.Install("visionarymodule")
+        except nest.pynestkernel.NESTError:
+            return False
+
+    return model in nest.Models()
