@@ -302,15 +302,16 @@ class LIFsampler(object):
 
         self._calc_distribution_theo()
 
-        # self._estimate_alpha()
-
+        # initial fit values from final search range (mean and size)
+        guess_p05 = (calibration.V_rest_min + calibration.V_rest_max) / 2.,
+        guess_alpha = (calibration.V_rest_max - calibration.V_rest_min),
         self.calibration.fit = db.Fit()
         self.calibration.fit.v_p05, self.calibration.fit.alpha =\
             fit.fit_sigmoid(
                 self.calibration.get_samples_v_rest(),
                 self.calibration.samples_p_on,
-                guess_p05=self.neuron_parameters.v_thresh,
-                guess_alpha=self.alpha_theo,
+                guess_p05=guess_p05,
+                guess_alpha=guess_alpha,
                 p_min=pmin,
                 p_max=pmax,)
 
