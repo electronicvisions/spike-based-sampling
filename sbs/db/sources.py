@@ -314,8 +314,11 @@ class PoissonSourceConfiguration(SourceConfiguration):
                                        len(self.rates))
             rates = np.hstack((self.rates for s in samplers))
             weights = np.hstack((self.weights for s in samplers))
-            if self.weights[0]*self.weights[1] > 0:
-                raise ValueError("Noise weights are both excitatory. "
+            if np.all(weights > 0):
+                raise ValueError("Noise weights are all excitatory. "
+                                 "Aborting.")
+            if np.all(weights < 0):
+                raise ValueError("Noise weights are all inhibitory. "
                                  "Aborting.")
 
         # we want a mapping from each samplers sources into a large flattened
