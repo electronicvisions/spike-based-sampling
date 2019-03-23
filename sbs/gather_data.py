@@ -183,7 +183,7 @@ def gather_calibration_data(
     pop.record("spikes")
     pop.initialize(v=samples_v_rest)
 
-    if isinstance(neuron_params, db.NativeNestMixin):
+    if getattr(neuron_params, "is_nest_native", False):
         # the nest-native parameter for v_rest is E_L
         pop.set(E_L=samples_v_rest)
     else:
@@ -191,7 +191,7 @@ def gather_calibration_data(
 
     # comment in for debugging
     if log.getEffectiveLevel() <= logging.DEBUG and False:
-        if isinstance(neuron_params, db.NativeNestMixin):
+        if getattr(neuron_params, "is_nest_native", False):
             for i, s in enumerate(pop):
                 # the nest-native parameter for v_rest is E_L
                 log.debug("v_rest of neuron #{}: {} mV".format(i, s.E_L))

@@ -5,8 +5,9 @@ from .core import Data
 from .. import utils
 
 import copy
+import functools as ft
 import six
-import itertools as it
+import types
 
 
 class NeuronParameters(Data):
@@ -122,29 +123,30 @@ class NeuronParametersCurrentAlpha(NeuronParameters):
     }
 
 
-class NativeNestMixin(object):
-    """
-        Mixin that marks neuron models that are only compatible with nest.
-    """
-    data_attribute_types = {
-        "nest_model": str,
-    }
-    nest_only_attributes = []
+def nest_native_type(klass):
+    """Decorator that marks neuron models that are only compatible with
+    nest.
 
-    # Can be used to give a tanslations dictionary from PyNN.
-    # These are the same translations attributes as in all PyNN standardmodels.
-    # If it is a string it is interpreted as standardmodel to take.
-    # translations from.
-    translations = None
+    Adds translations attribute, that can be used to give a tanslations
+    dictionary from PyNN. These are the same translations attributes as in all
+    PyNN standardmodels. If it is a string it is interpreted as standardmodel
+    to take translations from.
+    """
 
+    klass.data_attribute_types["nest_model"] = str
+    klass.nest_only_attributes = []
+
+    if getattr(klass, "translations", None) is None:
+        setattr(klass, "translations", None)
+
+    setattr(klass, "is_nest_native", True)
+
+    @ft.wraps(klass.get_pynn_parameters)
     def get_pynn_parameters(self, adjusted_parameters=None):
-        dikt = self.get_dict()
 
-        # apply adjustments before any translation take place
-        if adjusted_parameters is not None:
-            dikt.update(adjusted_parameters)
+        dikt = super(klass, self).get_pynn_parameters(
+                adjusted_parameters)
 
-        del dikt["pynn_model"]
         del dikt["nest_model"]
 
         for noa in self.nest_only_attributes:
@@ -153,6 +155,9 @@ class NativeNestMixin(object):
         dikt = self.translate_parameters_to_nest(dikt)
 
         return dikt
+
+    setattr(klass, "get_pynn_parameters",
+            types.MethodType(get_pynn_parameters, None, klass))
 
     def translate_parameters_to_nest(self, dikt):
         if self.translations is None:
@@ -183,10 +188,16 @@ class NativeNestMixin(object):
 
         return translated
 
+    setattr(klass, "translate_parameters_to_nest",
+            types.MethodType(translate_parameters_to_nest, None, klass))
+
     def get_nest_parameters(self):
         dikt = self.get_dict()
         nest_params = {k: dikt[k] for k in self.nest_only_attributes}
         return nest_params
+
+    setattr(klass, "get_nest_parameters",
+            types.MethodType(get_nest_parameters, None, klass))
 
     def get_pynn_model_object(self, sim):
         celltype = sim.native_cell_type(self.nest_model)
@@ -197,6 +208,9 @@ class NativeNestMixin(object):
             celltype.translations = copy.deepcopy(translations)
 
         return celltype
+
+    setattr(klass, "get_pynn_model_object",
+            types.MethodType(get_pynn_model_object, None, klass))
 
     def get_translations_pynn(self):
         if isinstance(self.translations, six.string_types):
@@ -210,40 +224,55 @@ class NativeNestMixin(object):
         else:
             return self.translations
 
+    setattr(klass, "get_translations_pynn",
+            types.MethodType(get_translations_pynn, None, klass))
 
-class RandomRefractoryMixin(NativeNestMixin):
+    return klass
+
+
+def nest_random_refractory_type(klass):
+    klass = nest_native_type(klass)
+
     # don't set anything tau_refrac related via pyNN
-    nest_only_attributes = ["tau_refrac", "tau_refrac_dist"] +\
-                           NativeNestMixin.nest_only_attributes
+    for rtr_attr in ["tau_refrac", "tau_refrac_dist"]:
+        if rtr_attr not in klass.nest_only_attributes:
+            klass.nest_only_attributes.append(rtr_attr)
 
-    data_attribute_types = dict(it.chain({
-        # Dictionary describing one of the random distributions mentioned here:
-        # http://www.nest-simulator.org/connection_management/
-        # Please note that if the distribution emits float values they are
-        # interpreted as ms. On the other hand, integers are interpreted as
-        # simulation steps!
-        #
-        # NOTE: tau_refrac is still used as a mean value for calibration!!
-        "tau_refrac_dist": dict,
-        }.iteritems(), NativeNestMixin.data_attribute_types.iteritems()))
+    # Dictionary describing one of the random distributions mentioned here:
+    # http://www.nest-simulator.org/connection_management/ Please note that if
+    # the distribution emits float values they are interpreted as ms. On the
+    # other hand, integers are interpreted as simulation steps!
+    #
+    # NOTE: tau_refrac is still used as a mean value for calibration!!
+    if "tau_refrac_dist" not in klass.data_attribute_types:
+        klass.data_attribute_types["tau_refrac_dist"] = dict
+
+    orig_get_nest_parameters = klass.get_nest_parameters
 
     def get_nest_parameters(self):
-        params = super(RandomRefractoryMixin, self).get_nest_parameters()
+        params = orig_get_nest_parameters(self)
         params["t_ref"] = params["tau_refrac_dist"]
         del params["tau_refrac_dist"]
         del params["tau_refrac"]
         return params
 
+    setattr(klass, "get_nest_parameters",
+            types.MethodType(get_nest_parameters, None, klass))
 
+    return klass
+
+
+@nest_random_refractory_type
 class ConductanceExponentialRandomRefractory(
-        RandomRefractoryMixin, NeuronParametersConductanceExponential):
+        NeuronParametersConductanceExponential):
 
     nest_model = "iaf_cond_exp_rtr"
     translations = "IF_cond_exp"
 
 
+@nest_random_refractory_type
 class CurrentExponentialRandomRefractory(
-        RandomRefractoryMixin, NeuronParametersCurrentExponential):
+        NeuronParametersCurrentExponential):
 
     nest_model = "iaf_psc_exp_rtr"
     translations = "IF_curr_exp"

@@ -124,7 +124,7 @@ class LIFsampler(object):
 
     def sync_bias_to_pynn(self):
         assert self.is_created
-        if isinstance(self.neuron_parameters, db.NativeNestMixin):
+        if getattr(self.neuron_parameters, "is_nest_native", False):
             self.population.set(E_L=self.get_v_rest_from_bias())
         else:
             self.population.set(v_rest=self.get_v_rest_from_bias())
@@ -209,7 +209,7 @@ class LIFsampler(object):
     def is_using_nest_model(self, sim=None):
         if sim is None:
             sim = self.sim
-        if isinstance(self.neuron_parameters, db.NativeNestMixin):
+        if getattr(self.neuron_parameters, "is_nest_native", False):
             if not hasattr(sim, "nest"):
                 raise RuntimeError("Please use native Nest models with the "
                                    "PyNN.Nest backend!")

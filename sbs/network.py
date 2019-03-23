@@ -376,8 +376,9 @@ class BoltzmannMachineBase(object):
 
     def sync_biases_to_pynn(self):
         if self.all_samplers_same_model:
-            if isinstance(self.samplers[0].neuron_parameters,
-                          db.NativeNestMixin):
+            if getattr(self.samplers[0].neuron_parameters,
+                       "is_nest_native",
+                       False):
                 self.population.set(E_L=self.v_rests)
             else:
                 self.population.set(v_rest=self.v_rests)
