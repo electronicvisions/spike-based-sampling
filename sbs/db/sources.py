@@ -493,7 +493,7 @@ class MultiPoissonVarRateSourceConfiguration(SourceConfiguration):
             all_weights = [self.weight_per_source
                            for i in xrange(len(samplers))]
 
-            all_rate_changes = [self.rates_changes_per_source
+            all_rate_changes = [self.rate_changes_per_source
                                 for i in xrange(len(samplers))]
 
             self._assert_correct_config(self)
@@ -574,7 +574,7 @@ class MultiPoissonVarRateSourceConfiguration(SourceConfiguration):
             rate_changes_per_consolidated_source,
             idx_source_to_consolidated)
 
-        such that (weight_per_source[i], rates_changes_per_source[i]) are found
+        such that (weight_per_source[i], rate_changes_per_source[i]) are found
         in
         (weight_per_consolidated_source[idx_source_to_consolidated[i]]),
          rate_changes_per_consolidated_source[idx_source_to_consolidated[i]])
