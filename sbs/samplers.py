@@ -604,30 +604,31 @@ class LIFsampler(object):
         volttrace = self.free_vmem["trace"]
 
         counts, bins, patches = ax.hist(volttrace, bins=num_bins, normed=True,
-                                        fc="None")
+                                        alpha=.5)
 
         ax.set_xlim(volttrace.min(), volttrace.max())
+
+        mean, std, g_tot, tau_eff = self.get_vmem_dist_theo()
+        max_bin = counts.max()
+        ax.axvline(mean, ls="-", c="g", label="$\\bar{v}_{theo}$", alpha=.8)
 
         v_thresh = self.neuron_parameters.v_thresh
         v_p05 = self.calibration.fit.v_p05
         if plot_vlines:
-            ax.axvline(v_thresh, ls="--", label="$v_{thresh}$", c="r")
-            ax.axvline(v_p05, ls="--", label="$v_{p=0.5}$", c="b")
-
-        mean, std, g_tot, tau_eff = self.get_vmem_dist_theo()
-        max_bin = counts.max()
-
-        ax.axvline(mean, ls="-", c="r", label="$\\bar{v}_{theo}$")
-        ax.arrow(x=mean, dx=std, y=np.exp(-.5)*max_bin, dy=0.,
-                 label="$\\sigma_{v_{theo}}$")
-        ax.arrow(x=mean, dx=-std, y=np.exp(-.5)*max_bin, dy=0.)
+            ax.axvline(v_thresh, ls="--", label="$v_{thresh}$", c="r",
+                       alpha=.8)
+            ax.axvline(v_p05, ls="--", label="$v_{p=0.5}$", c="b", alpha=.8)
 
         ax.ticklabel_format(axis="x", style='sci', useOffset=False)
+
+        std_points = np.linspace(mean-std, mean+std, 10)
+        ax.plot(std_points, np.exp(-.5)*max_bin*np.ones(len(std_points)),
+                label="$\\sigma_{v_{theo}}$", alpha=.8, color="k")
 
         ax.set_xlabel("$V_{mem}$")
         ax.set_ylabel("$p(V_{mem,free})$")
 
-        ax.legend(bbox_to_anchor=(0.35, 1.))
+        ax.legend()
 
     @meta.plot_function("free_vmem_autocorr")
     def plot_free_vmem_autocorr(self, max_step_diff=1000, fig=None, ax=None):

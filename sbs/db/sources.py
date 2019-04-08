@@ -429,12 +429,12 @@ class MultiPoissonVarRateSourceConfiguration(SourceConfiguration):
             rate_changes = np.array([[0., 1000.],
                                      [2000., 100.]])
 
-            weights = [0.001, -0.001]
+            poisson_weights = np.array([0.001, -0.001])
 
             sampler_config.source_config = \
                 sbs.db.MultiPoissonVarRateSourceConfiguration(
                     weight_per_source=poisson_weights,
-                    rate_changes_per_source=[rate_changes]*len(weights))
+                    rate_changes_per_source=[rate_changes]*len(poisson_weights))
         ```
 
         MultiPoissonVarRateSourceConfiguration(src_courses=src_courses)
@@ -480,23 +480,23 @@ class MultiPoissonVarRateSourceConfiguration(SourceConfiguration):
 
         if not isinstance(samplers, sim.common.BasePopulation):
             log.debug("Generating for list of samplers.")
+            for s in samplers:
+                self._assert_correct_config(s.source_config)
+
             all_weights = np.r_[[s.source_config.weight_per_source
                                  for s in samplers]]
             all_rate_changes = [
                     rc for s in samplers
                     for rc in s.source_config.rate_changes_per_source]
-
-            for s in samplers:
-                self._assert_correct_config(s.source_config)
         else:
-            log.debug("Generating for single PyNN.Population")
-            all_weights = [self.weight_per_source
-                           for i in xrange(len(samplers))]
-
-            all_rate_changes = [self.rate_changes_per_source
-                                for i in xrange(len(samplers))]
-
             self._assert_correct_config(self)
+
+            log.debug("Generating for single PyNN.Population")
+            all_weights = np.r_[[self.weight_per_source
+                                 for i in xrange(len(samplers))]]
+
+            all_rate_changes = list(it.chain(*it.repeat(
+                self.rate_changes_per_source, len(samplers))))
 
         num_virtual_sources_per_sampler = map(len, all_weights)
         num_virtual_sources = sum(num_virtual_sources_per_sampler)

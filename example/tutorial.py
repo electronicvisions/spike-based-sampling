@@ -419,9 +419,8 @@ def sample_network_fixed_spikes():
 def sample_network_var_poisson_rate():
     """
         How to setup and evaluate a Boltzmann machine. Please note that in
-        order to instantiate BMs all needed neuron parameters need to be in the
-        database and calibrated. Also not that weight changes are not
-        supported
+        order to instantiate BMs all needed neuron parameters need to be in
+        the database and calibrated.
 
     """
     np.random.seed(42)
@@ -430,31 +429,26 @@ def sample_network_var_poisson_rate():
 
     # Load calibration data in order to create network.
     sampler_config = sbs.db.SamplerConfiguration.load(
-            "tutorial_calibration.json")
+        "tutorial-calibration-curr.json")
 
     # We set the variation behaviour of the rates via the source
     # configuration of the sampler configuration. If we do not set it
-    # specifically, the source configuration from the calibration file would
-    # be used. Since a calibration on an array of different rates is not
-    # sensible, we set it here. We specify the weights, rates and times of each
-    # poisson input of a sampler. Positive (negative) weights are interpreted
-    # as excitatory (inhibitory).
+    # specifically, the source configuration from the calibration file
+    # would be used. Since a calibration on an array of different rates is
+    # not sensible, we set it here. We specify the weights, rates and times
+    # of each poisson input of a sampler. Details about the correct syntax
+    # are provided in the documentation of this source configuration class.
 
     # Define the rate changes of an excitatory Poisson source.
-    poisson_source_1 = np.array([
-        # [ <time>, <rate>, <weight> ],
-        [0., 1000., 0.001],
-        [2000., 100., 0.001]])
+    rate_changes = np.array([[0., 1000.],
+                             [2000., 100.]])
 
-    # A second Poisson source has the same rate changes but is inhibitory.
-    poisson_source_2 = poisson_source_1.copy()
-    poisson_source_2[:, -1] *= -1
+    poisson_weights = np.array([0.001, -0.001])
 
-    # The individual Poisson source course arrays are bundled into one matrix
-    # src_courses and provided as keyword argument to the class.
-    src_courses = np.array([poisson_source_1, poisson_source_2])
     sampler_config.source_config = \
-        sbs.db.MultiPoissonVarRateSourceConfiguration(src_courses=src_courses)
+        sbs.db.MultiPoissonVarRateSourceConfiguration(
+            weight_per_source=poisson_weights,
+            rate_changes_per_source=[rate_changes] * len(poisson_weights))
 
     # Choose the number of samplers in the network.
     bm = sbs.network.ThoroughBM(num_samplers=5, sim_name=sim_name,

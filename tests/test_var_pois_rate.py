@@ -17,6 +17,9 @@ def check_mpg():
         "multi_poisson_generator")
 
 
+@unittest.skipUnless(check_mpg(),
+                     "requires multi poisson generator models from "
+                     "visionary NEST module")
 class TestVarPoisRate(unittest.TestCase):
     def setUp(self):
         import nest
@@ -24,9 +27,6 @@ class TestVarPoisRate(unittest.TestCase):
         if "multi_poisson_generator" not in nest.Models():
             nest.Install("visionarymodule")
 
-    @unittest.skipUnless(check_mpg(),
-                         "requires multi poisson generator models from "
-                         "visionary NEST module")
     def test_sample_network_var_poisson_rate_cond(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
@@ -52,7 +52,7 @@ class TestVarPoisRate(unittest.TestCase):
         rate_changes = np.array([[0., 1000.],
                                  [2000., 100.]])
 
-        poisson_weights = [0.001, -0.001]
+        poisson_weights = np.array([0.001, -0.001])
 
         sampler_config.source_config = \
             sbs.db.MultiPoissonVarRateSourceConfiguration(
@@ -87,9 +87,6 @@ class TestVarPoisRate(unittest.TestCase):
 
         bm.selected_sampler_idx = range(bm.num_samplers)
 
-    @unittest.skipUnless(check_mpg(),
-                         "requires multi poisson generator models from "
-                         "visionary NEST module")
     def test_sample_network_var_poisson_rate_curr(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
@@ -115,7 +112,7 @@ class TestVarPoisRate(unittest.TestCase):
         rate_changes = np.array([[0., 1000.],
                                  [2000., 100.]])
 
-        poisson_weights = [0.001, -0.001]
+        poisson_weights = np.array([0.001, -0.001])
 
         sampler_config.source_config = \
             sbs.db.MultiPoissonVarRateSourceConfiguration(
@@ -149,3 +146,34 @@ class TestVarPoisRate(unittest.TestCase):
         log.info("Spike-data: {}".format(pf(bm.spike_data)))
 
         bm.selected_sampler_idx = range(bm.num_samplers)
+
+    def test_vmem_dist_var_poisson_rate_curr(self):
+        """
+            This tutorial shows how to record and plot the distribution of the
+            free membrane potential.
+        """
+        np.random.seed(42)
+
+        # Load calibration data in order to create network.
+        sampler_config = sbs.db.SamplerConfiguration.load(
+            "test-calibration-curr.json")
+
+        # Define the rate changes of an excitatory Poisson source.
+        rate_changes = np.array([[0., 1000.],
+                                 [2000., 100.]])
+
+        poisson_weights = np.array([0.001, -0.001])
+
+        sampler_config.source_config = \
+            sbs.db.MultiPoissonVarRateSourceConfiguration(
+                weight_per_source=poisson_weights,
+                rate_changes_per_source=[rate_changes] * len(poisson_weights))
+
+        sampler = sbs.samplers.LIFsampler(sampler_config, sim_name=sim_name)
+
+        sampler.measure_free_vmem_dist(duration=1e4, dt=0.01,
+                                       burn_in_time=500.)
+        sampler.plot_free_vmem(prefix="test_vmem_dist_var_poisson_rate_curr-",
+                               save=True)
+        sampler.plot_free_vmem_autocorr(
+            prefix="test_vmem_dist_var_poisson_rate_curr-", save=True)
