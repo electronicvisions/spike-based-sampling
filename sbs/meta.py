@@ -54,8 +54,6 @@ class DependsOn(object):
 
     def __get__(self, instance, owner):
         if self.needs_update(instance):
-            #  if log.getEffectiveLevel() <= logging.DEBUG:
-                #  log.debug("{} needs update.".format(self.attr_name))
             setattr(instance, self.value_name, self._func(instance))
 
         return getattr(instance, self.value_name)
