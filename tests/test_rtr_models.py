@@ -79,7 +79,7 @@ class TestRTRModels(unittest.TestCase):
 
             Does the same thing as sbs.tools.sample_network(...).
         """
-        np.random.seed(42)
+        np.random.seed(422342134)
 
         # Networks can be saved outside of the database.
         duration = 1e4
@@ -172,7 +172,7 @@ class TestRTRModels(unittest.TestCase):
 
             Does the same thing as sbs.tools.sample_network(...).
         """
-        np.random.seed(42)
+        np.random.seed(42141414)
 
         # Networks can be saved outside of the database.
         duration = 1e4

@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+
 import numpy as np
 import itertools as it
 import collections as c
 import uuid
+import sys
 
+from .. import utils
 from ..logcfg import log
 from .core import Data
 from ..conversion import weight_pynn_to_nest
@@ -16,6 +19,7 @@ __all__ = [
         "sources_create_connect",
         "SourceConfiguration",
         "PoissonSourceConfiguration",
+        "SinusPoissonSourceConfiguration",
         "MultiPoissonVarRateSourceConfiguration",
         "FixedSpikeTrainConfiguration",
         "NoiseNetworkSourceConfiguration",
@@ -403,6 +407,214 @@ class PoissonSourceConfiguration(SourceConfiguration):
         }
 
 
+class SinusPoissonSourceConfiguration(SourceConfiguration):
+    """
+        Sets up the configuration of a network's Poisson noise input with
+        sinusoidally varying rates.
+
+        Configuration is done via four attributes:
+
+        weights:
+            A numpy array representing the weights of the Poisson sources,
+            where positive/negative weights represent excitatory/inhibitory
+            synapses.
+
+        rates:
+            A numpy array representing the mean firing rates of the Poisson
+            sources, in spikes/second, default: 0 s^-1.
+
+        amplitudes:
+            A numpy array representing the firing rate modulation amplitudes of
+            the Poisson sources in spikes/second, default: 0 s^-1.
+
+        frequencies:
+            A numpy array representing the modulation frequencies or inverse
+            periods of the Poisson sources in Hz, default: 0 Hz.
+
+        phases:
+            A numpy array representing the modulation phases of the Poisson
+            sources in degree [0-360], default: 0.
+
+        individual_spike_trains:
+            By default, the generator sends a different spike train to each of
+            its targets. If set to false, the generator will send the same
+            spike train to all of its targets.
+
+        Example:
+        ```
+            sampler_config.source_config = \
+                sbs.db.SinusPoissonSourceConfiguration(
+                    weights=np.array([0.001, -0.001]),
+                    rates=np.array([2000.] * 2),
+                    amplitudes=np.array([1000.] * 2),
+                    frequencies=np.array([5.]) * 2,
+                    phases=np.array([0.]) * 2,
+                    individual_spike_trains=True
+                    )
+        ```
+        """
+
+    data_attribute_types = {
+        "weights": np.ndarray,            # weights of the Poisson sources
+        "rates": np.ndarray,              # mean firing rates, default: 0
+        "amplitudes": np.ndarray,         # in spks/s, default: 0
+        "frequencies": np.ndarray,        # frequency of sine: default 0
+        "phases": np.ndarray,             # modulation phase in degree[0-360],
+                                          # default:0
+        "individual_spike_trains": bool,  # needs to be the same setting for
+                                          # all samplers
+    }
+
+    source_model = "sinusoidal_poisson_generator"
+
+    def create_connect(self, sim, samplers, duration, **kwargs):
+        """
+            Shall create and connect the sources to the samplers.
+        """
+        # Three cases have to be distinguished:
+        # 1) connect to regular population (calibration etc)
+        # 2) connect to list of samplers having the same rates
+        # 3) connect to list of samplers having different rates
+
+        if hasattr(sim, "nest"):
+            sources, projections = self.create_nest(
+                    sim, samplers, duration)
+
+        else:
+            raise NotImplementedError("Only backend nest supported.")
+        return sources, projections
+
+    def create_nest(self, sim, samplers, duration):
+        log.info("Creating sinus poisson source directly in NEST.")
+
+        if not isinstance(samplers, sim.common.BasePopulation):
+            num_sources_per_sampler = np.array([len(s.source_config.rates)
+                                                for s in samplers])
+            rates = np.hstack((s.source_config.rates for s in samplers))
+            weights = np.hstack((s.source_config.weights for s in samplers))
+            amplitudes = np.hstack(
+                (s.source_config.amplitudes for s in samplers))
+            frequencies = np.hstack(
+                (s.source_config.frequencies for s in samplers))
+            phases = np.hstack((s.source_config.phases for s in samplers))
+
+            # take setting of the first sampler and assert that all others have
+            # the same
+            individual_spike_trains = \
+                samplers[0].source_config.individual_spike_trains
+
+            if not all((individual_spike_trains ==
+                        s.source_config.individual_spike_trains)
+                       for s in samplers):
+                raise ValueError(
+                        "All SinusPoissonSourceConfigurations must have the "
+                        "same 'individual_spike_trains' setting!")
+
+        else:
+            # if we have one population all get the same sources
+            num_sources_per_sampler = (np.zeros(len(samplers), dtype=int) +
+                                       len(self.rates))
+            rates = np.hstack((self.rates for s in samplers))
+            weights = np.hstack((self.weights for s in samplers))
+            amplitudes = np.hstack((self.amplitudes for s in samplers))
+            frequencies = np.hstack((self.frequencies for s in samplers))
+            phases = np.hstack((self.phases for s in samplers))
+            individual_spike_trains = self.individual_spike_trains
+            if np.all(weights > 0):
+                raise ValueError("Noise weights are all excitatory. "
+                                 "Aborting.")
+            if np.all(weights < 0):
+                raise ValueError("Noise weights are all inhibitory. "
+                                 "Aborting.")
+
+        # we want a mapping from each samplers sources into a large flattened
+        # array
+        offset_per_sampler = np.cumsum(num_sources_per_sampler)
+
+        num_parrots = rates.size
+
+        def idx_parrot_to_sampler(idx):
+            """
+                Parrot id to sampler id.
+            """
+            return np.where(idx < offset_per_sampler)[0][0]
+
+        gathered_parameters = {
+                "rate": rates,
+                "amplitude": amplitudes,
+                "frequency": frequencies,
+                "phase": phases,
+            }
+
+        log.info(pf(gathered_parameters))
+
+        unique_source_configurations = list(utils.group_identical_parameters(
+            gathered_parameters))
+
+        num_generators = len(unique_source_configurations)
+
+        log.info("Creating {} different sinus poisson sources.".format(
+            num_generators))
+
+        import nest
+        gid_generators = np.array(nest.Create(self.source_model,
+                                              num_generators))
+
+        # in case all samplers should receive the same spike rates, we simply
+        # introduce another layer of parrot neurons
+        if not individual_spike_trains:
+            hidden_gid_generators = gid_generators
+            gid_generators = np.array(nest.Create("parrot_neurons",
+                                                  num_generators))
+            nest.Connect(hidden_gid_generators, gid_generators, "one_to_one")
+
+        # acting as sources
+        gid_parrots = np.array(nest.Create("parrot_neuron", num_parrots))
+
+        # dictionary to nest connection-tuples, these are NOT PyNN-projections!
+        nest_connections = {
+                "generator_to_parrot": [],
+                "parrot_to_sampler": [],
+            }
+
+        idx_parrot_to_generator = np.zeros(num_parrots, dtype=int)
+
+        for i, (idx, parameters) in enumerate(unique_source_configurations):
+            parameters["start"] = 0.
+            parameters["stop"] = sys.float_info.max
+
+            idx_parrot_to_generator[idx] = i
+            nest.SetStatus([gid_generators[i]], parameters)
+
+        list_pop = get_population_from_samplers(sim, samplers)
+
+        if isinstance(list_pop, sim.common.BasePopulation):
+            list_pop = [list_pop]
+
+        gid_samplers = np.hstack([p.all_cells.tolist() for p in list_pop])
+
+        nest_connections["generator_to_parrot"].append(
+                nest.Connect(gid_generators[idx_parrot_to_generator].tolist(),
+                             gid_parrots.tolist(), "one_to_one"))
+
+        idx_samplers = np.array([idx_parrot_to_sampler(i_parrot)
+                                 for i_parrot in range(gid_parrots.size)])
+        connect_gid_samplers = gid_samplers[idx_samplers]
+
+        nest_connections["parrot_to_sampler"].append(
+                nest.Connect(gid_parrots.tolist(),
+                             connect_gid_samplers.tolist(),
+                             "one_to_one",
+                             {"weight": weight_pynn_to_nest(weights)}))
+
+        sources = {
+                "generators": gid_generators,
+                "parrots": gid_parrots,
+            }
+
+        return sources, nest_connections
+
+
 class MultiPoissonVarRateSourceConfiguration(SourceConfiguration):
     """
         Sets up the configuration of a network's Poisson noise input with time
@@ -672,7 +884,7 @@ class FixedSpikeTrainConfiguration(SourceConfiguration):
             # all samplers receive same spikes
             for i, w in enumerate(self.weights):
                 source_id = get_index(self.spike_times[self.spike_ids == i])
-                for j in xrange(len(samplers)):
+                for j in range(len(samplers)):
                     conn_list.append((source_id, j, w))
         else:
             # each sampelr might have different spike times

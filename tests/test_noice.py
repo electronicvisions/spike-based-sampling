@@ -100,7 +100,7 @@ class TestNN(unittest.TestCase):
 
             Does the same thing as sbs.tools.sample_network(...).
         """
-        np.random.seed(42)
+        np.random.seed(4242351)
 
         # Networks can be saved outside of the database.
         duration = 1e4

@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+from __future__ import print_function
+
 import numpy as np
 from scipy.special import erf
 import string
@@ -42,6 +44,7 @@ __all__ = [
     "get_random_string",
     "get_sha1",
     "get_time_tuple",
+    "group_identical_parameters",
     "load_pickle",
     "nest_change_poisson_rate",
     "nest_copy_model",
@@ -634,3 +637,84 @@ def ensure_visionary_nest_model_available(model):
             return False
 
     return model in nest.Models()
+
+
+def group_identical_parameters(parameters, num_elements=None):
+    """Given a dictionary that contains several (parameter -> values) mappings
+    (values can either be scalars, sequences or numpy arrays), identify all
+    entries that have the same values for every parameter.
+
+    Example:
+        list(group_identical_parameters(
+            {
+                "foo": [1, 1, 2],
+                "bar": [2, 2, 4],
+                "deadbeef": 0
+            }))
+        [
+            array([0, 1]), {"foo": 1, "bar": 2, "deadbeef": 0},
+            array([2]),  {"foo": 2, "bar": 4, "deadbeef": 0}
+        ]
+
+    Args:
+        parameters: dictionary containing several parameter-> values mapping.
+
+        num_elements: Int
+            If None will be determined from parameters dictionary.
+
+        Then it groups all elements that share ALL arguments and returns
+        a list of dictionaries containing indices and arguments of the groups
+
+    Returns:
+        Generator yielding indices-array as well as the corresponding parameter
+        values.
+
+    (adapted from SEMf.misc.utils.find_minimal_coverage)
+    """
+    all_num_elements = [len(v) for v in parameters.values()
+                        if isinstance(v, c.Sized)
+                        and isinstance(v, c.Iterable)]
+
+    if num_elements is None:
+        if len(all_num_elements) == 0:
+            # there is only element in all values -> we are done
+            yield (np.array([0]), parameters)
+            raise StopIteration
+
+        num_elements = all_num_elements[0]
+
+    if any((num_elements != num_elems for num_elems in all_num_elements)):
+        raise ValueError("Parameter arrays have incompatible lengths.")
+
+    del all_num_elements
+
+    arg_names = parameters.keys()
+    # unique values for each argument
+    uniq_vals = {}
+    # indices that say which value corresponds to which unique one
+    uniq_indices = {}
+
+    for k, v in parameters.items():
+        if isinstance(v, c.Sized) and isinstance(v, c.Iterable):
+            v = np.array(v)
+            uniq_vals[k], uniq_indices[k] = np.unique(v, return_inverse=True)
+        else:
+            # the value for all elements is the same
+            uniq_vals[k] = np.array(v).reshape((1,))
+            uniq_indices[k] = np.zeros((num_elements,), dtype=int)
+
+    # generate a set to get all unique combination tuples
+    uniq_combs = set((tuple((uniq_indices[k][i] for k in arg_names))
+                     for i in range(num_elements)))
+
+    for indices in uniq_combs:
+        # find which elments actually have this index combination
+        elem_indices = np.ones((num_elements), dtype=bool)
+        for k, i in it.izip(arg_names, indices,):
+            elem_indices *= (uniq_indices[k] == i)
+
+        # sum is larger than zero if there is at least one element for this
+        # combination
+        if elem_indices.sum() > 0:
+            yield elem_indices.nonzero()[0], {
+                    k: uniq_vals[k][i] for k, i in zip(arg_names, indices)}

@@ -198,7 +198,7 @@ class TestBasics(unittest.TestCase):
 
             Does the same thing as sbs.tools.sample_network(...).
         """
-        np.random.seed(42)
+        np.random.seed(4215123)
 
         # Networks can be saved outside of the database.
         #  filename = "tutorial-network.pkl.gz"
@@ -286,7 +286,7 @@ class TestBasics(unittest.TestCase):
 
             Does the same thing as sbs.tools.sample_network(...).
         """
-        np.random.seed(42)
+        np.random.seed(42414142)
 
         # Networks can be saved outside of the database.
         filename = "tutorial-network.pkl.gz"
@@ -370,7 +370,7 @@ class TestBasics(unittest.TestCase):
             DKL etc will be horrible in this example (but that is not the point
             here).
         """
-        np.random.seed(42)
+        np.random.seed(421413124)
 
         duration = 1e4
 

@@ -12,29 +12,37 @@ log = sbs.log
 sim_name = "pyNN.nest"
 
 
-def check_mpg():
+def check_model():
     return sbs.utils.ensure_visionary_nest_model_available(
-        "multi_poisson_generator")
+        "sinusoidal_poisson_generator")
 
 
-@unittest.skipUnless(check_mpg(),
-                     "requires multi poisson generator models from "
-                     "visionary NEST module")
-class TestVarPoisRate(unittest.TestCase):
+# TODO: Test individual_spike_trains = False!
+
+@unittest.skipUnless(check_model(),
+                     "requires sinusoidal poisson generator models")
+class TestSinusoidalPoissonGenerator(unittest.TestCase):
     def setUp(self):
-        import nest
-        nest.ResetKernel()
-        if "multi_poisson_generator" not in nest.Models():
-            nest.Install("visionarymodule")
+        import pyNN.nest as sim
 
-    def test_sample_network_var_poisson_rate_cond(self):
+        self.nest = sim.nest
+
+        sim.setup(timestep=0.1, spike_precision="on_grid")
+
+        self.sim = sim
+
+    def tearDown(self):
+        import pyNN.nest as sim
+        sim.end()
+
+    def test_sample_network_sinusoidal_poisson_rate_cond(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
             order to instantiate BMs all needed neuron parameters need to be in
             the database and calibrated.
 
         """
-        np.random.seed(4241414)
+        np.random.seed(424242)
 
         # Load calibration data in order to create network.
         sampler_config = sbs.db.SamplerConfiguration.load(
@@ -48,16 +56,7 @@ class TestVarPoisRate(unittest.TestCase):
         # of each poisson input of a sampler. Details about the correct syntax
         # are provided in the documentation of this source configuration class.
 
-        # Define the rate changes of an excitatory Poisson source.
-        rate_changes = np.array([[0., 1000.],
-                                 [2000., 100.]])
-
-        poisson_weights = np.array([0.001, -0.001])
-
-        sampler_config.source_config = \
-            sbs.db.MultiPoissonVarRateSourceConfiguration(
-                weight_per_source=poisson_weights,
-                rate_changes_per_source=[rate_changes] * len(poisson_weights))
+        sampler_config.source_config = self.get_source_config()
 
         # Choose the number of samplers in the network.
         bm = sbs.network.ThoroughBM(num_samplers=5, sim_name=sim_name,
@@ -87,14 +86,14 @@ class TestVarPoisRate(unittest.TestCase):
 
         bm.selected_sampler_idx = range(bm.num_samplers)
 
-    def test_sample_network_var_poisson_rate_curr(self):
+    def test_sample_network_sinusoidal_poisson_rate_curr(self):
         """
             How to setup and evaluate a Boltzmann machine. Please note that in
             order to instantiate BMs all needed neuron parameters need to be in
             the database and calibrated.
 
         """
-        np.random.seed(421243)
+        np.random.seed(424242)
 
         # Load calibration data in order to create network.
         sampler_config = sbs.db.SamplerConfiguration.load(
@@ -108,16 +107,7 @@ class TestVarPoisRate(unittest.TestCase):
         # of each poisson input of a sampler. Details about the correct syntax
         # are provided in the documentation of this source configuration class.
 
-        # Define the rate changes of an excitatory Poisson source.
-        rate_changes = np.array([[0., 1000.],
-                                 [2000., 100.]])
-
-        poisson_weights = np.array([0.001, -0.001])
-
-        sampler_config.source_config = \
-            sbs.db.MultiPoissonVarRateSourceConfiguration(
-                weight_per_source=poisson_weights,
-                rate_changes_per_source=[rate_changes] * len(poisson_weights))
+        sampler_config.source_config = self.get_source_config()
 
         # Choose the number of samplers in the network.
         bm = sbs.network.ThoroughBM(num_samplers=5, sim_name=sim_name,
@@ -147,33 +137,36 @@ class TestVarPoisRate(unittest.TestCase):
 
         bm.selected_sampler_idx = range(bm.num_samplers)
 
-    def test_vmem_dist_var_poisson_rate_curr(self):
+    def test_vmem_dist_sinusoidal_poisson_rate_curr(self):
         """
             This tutorial shows how to record and plot the distribution of the
             free membrane potential.
         """
-        np.random.seed(422441)
+        np.random.seed(424142)
 
         # Load calibration data in order to create network.
         sampler_config = sbs.db.SamplerConfiguration.load(
             "test-calibration-curr.json")
 
-        # Define the rate changes of an excitatory Poisson source.
-        rate_changes = np.array([[0., 1000.],
-                                 [2000., 100.]])
-
-        poisson_weights = np.array([0.001, -0.001])
-
-        sampler_config.source_config = \
-            sbs.db.MultiPoissonVarRateSourceConfiguration(
-                weight_per_source=poisson_weights,
-                rate_changes_per_source=[rate_changes] * len(poisson_weights))
+        sampler_config.source_config = self.get_source_config()
 
         sampler = sbs.samplers.LIFsampler(sampler_config, sim_name=sim_name)
 
         sampler.measure_free_vmem_dist(duration=1e4, dt=0.01,
                                        burn_in_time=500.)
-        sampler.plot_free_vmem(prefix="test_vmem_dist_var_poisson_rate_curr-",
-                               save=True)
+        sampler.plot_free_vmem(
+                prefix="test_vmem_dist_sinusoidal_poisson_rate_curr-",
+                save=True)
         sampler.plot_free_vmem_autocorr(
-            prefix="test_vmem_dist_var_poisson_rate_curr-", save=True)
+            prefix="test_vmem_dist_sinusoidal_poisson_rate_curr-", save=True)
+
+    def get_source_config(self):
+        poisson_weights = np.array([0.001, -0.001])
+
+        return sbs.db.SinusPoissonSourceConfiguration(
+                    weights=poisson_weights,
+                    rates=[10000., 10000.],
+                    amplitudes=[2000., 2000.],
+                    frequencies=[5., 5.],
+                    phases=[100., 0.],
+                    individual_spike_trains=True)

@@ -40,7 +40,7 @@ class TestNest(unittest.TestCase):
             Please note that this functionality should be implemented in a rate
             changing soure (which is ongoing work).
         """
-        np.random.seed(42)
+        np.random.seed(4245143)
 
         sampler_config = sbs.db.SamplerConfiguration.load(
                 "test-calibration-cond.json")
