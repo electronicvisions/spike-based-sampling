@@ -14,7 +14,7 @@ try {
     }
     stage("Flake8 check") {
         runOnSlave(label: "frontend") {
-            inSingularity(app: "visionary-dev-tools") {
+            inSingularity(app: "visionary-simulation") {
                 jesh "flake8 --tee --output flake8.log"
             }
             step([$class: 'WarningsPublisher',
@@ -55,13 +55,13 @@ try {
     }
     stage("Run tests") {
         onSlurmResource(partition: "jenkins") {
-            inSingularity(app: "visionary-dev-tools") {
+            inSingularity {
                 jesh "bash -x .ci/stages/test.sh"
-                archiveArtifacts("tests/*.png")
-                step([$class: 'XUnitBuilder',
-                      thresholds: [[$class: 'FailedThreshold', unstableThreshold:'0']],
-                      tools: [[$class: 'JUnitType', pattern: 'tests/test_results.xml']]])
             }
+            archiveArtifacts("tests/*.png")
+            step([$class: 'XUnitBuilder',
+                  thresholds: [[$class: 'FailedThreshold', unstableThreshold:'0']],
+                  tools: [[$class: 'JUnitType', pattern: 'tests/test_results.xml']]])
         }
     }
 } finally {
