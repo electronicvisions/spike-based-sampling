@@ -12,6 +12,10 @@ source <(spack module tcl loads -r py-nose "^python@:2.999.999")
 # assert that visionarymodule can be loaded
 (unset NEST_MODULES; python -c "import nest; nest.Install('visionarymodule')")
 
+# propagate OVERWRITE_DEFAULT_CONTAINER_IMAGE
+if [ -n "${OVERWRITE_DEFAULT_CONTAINER_IMAGE:-}" ]; then
+    export SBS_CONTAINER_IMAGE=${OVERWRITE_DEFAULT_CONTAINER_IMAGE}
+fi
 pushd tests
 nosetests --with-xunit --xunit-file=test_results.xml . || exit 0
 popd
