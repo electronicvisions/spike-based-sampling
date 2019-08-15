@@ -52,6 +52,17 @@ def sources_create_connect(sim, samplers, duration, **kwargs):
 
 
 class SourceConfiguration(Data):
+    def __init__(self, *args, **kwargs):
+        super(SourceConfiguration, self).__init__(*args, **kwargs)
+        self._verify_parameters()
+
+    def _verify_parameters(self):
+        """Internal helper function to verify parameters upon source
+        configuration creation so that we can fail early.
+
+        Can also be used to broadcast scalar parameters to desired shape.
+        """
+        pass
 
     def get_distribution_parameters(self):
         """
@@ -406,6 +417,14 @@ class PoissonSourceConfiguration(SourceConfiguration):
             "weights_inh": self.weights[is_inh],
         }
 
+    def _verify_parameters(self):
+        if self.rates.size == 1:
+            self.rates = np.array([self.rates] * self.weights.size)
+        else:
+            if self.rates.size != self.weights.size:
+                raise ValueError("rates-parameter needs to be either scalar "
+                                 "or same length as weights-array.")
+
 
 class SinusPoissonSourceConfiguration(SourceConfiguration):
     """
@@ -613,6 +632,23 @@ class SinusPoissonSourceConfiguration(SourceConfiguration):
             }
 
         return sources, nest_connections
+
+    def _verify_parameters(self):
+        for param_name in [
+                "rates",
+                "amplitudes",
+                "frequencies",
+                "phases"
+                ]:
+            param = getattr(self, param_name)
+
+            if param.size == 1:
+                setattr(self, param_name,
+                        np.array([param] * self.weights.size))
+            else:
+                if param.size != self.weights.size:
+                    raise ValueError("{}-parameter needs to be either scalar "
+                                     "or same length as weights-array.")
 
 
 class MultiPoissonVarRateSourceConfiguration(SourceConfiguration):

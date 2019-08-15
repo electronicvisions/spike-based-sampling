@@ -165,8 +165,8 @@ class TestSinusoidalPoissonGenerator(unittest.TestCase):
 
         return sbs.db.SinusPoissonSourceConfiguration(
                     weights=poisson_weights,
-                    rates=[10000., 10000.],
-                    amplitudes=[2000., 2000.],
-                    frequencies=[5., 5.],
+                    rates=10000.,
+                    amplitudes=2000.,
+                    frequencies=5.,
                     phases=[100., 0.],
                     individual_spike_trains=True)

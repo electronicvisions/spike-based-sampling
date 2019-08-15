@@ -79,7 +79,7 @@ class TestBasics(unittest.TestCase):
         # calibrate.
 
         source_config = sbs.db.PoissonSourceConfiguration(
-                rates=np.array([3000.] * 2),
+                rates=3000.,
                 weights=np.array([-1., 1]) * 0.001,
             )
 
