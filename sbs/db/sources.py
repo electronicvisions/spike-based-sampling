@@ -309,15 +309,15 @@ class PoissonSourceConfiguration(SourceConfiguration):
         if not isinstance(samplers, sim.common.BasePopulation):
             num_sources_per_sampler = np.array([len(s.source_config.rates)
                                                 for s in samplers])
-            rates = np.hstack((s.source_config.rates for s in samplers))
-            weights = np.hstack((s.source_config.weights for s in samplers))
+            rates = np.hstack([s.source_config.rates for s in samplers])
+            weights = np.hstack([s.source_config.weights for s in samplers])
 
         else:
             # if we have one population all get the same sources
             num_sources_per_sampler = (np.zeros(len(samplers), dtype=int) +
                                        len(self.rates))
-            rates = np.hstack((self.rates for s in samplers))
-            weights = np.hstack((self.weights for s in samplers))
+            rates = np.hstack([self.rates for s in samplers])
+            weights = np.hstack([self.weights for s in samplers])
             if np.all(weights > 0):
                 raise ValueError("Noise weights are all excitatory. "
                                  "Aborting.")
@@ -490,13 +490,13 @@ class SinusPoissonSourceConfiguration(SourceConfiguration):
         if not isinstance(samplers, sim.common.BasePopulation):
             num_sources_per_sampler = np.array([len(s.source_config.rates)
                                                 for s in samplers])
-            rates = np.hstack((s.source_config.rates for s in samplers))
-            weights = np.hstack((s.source_config.weights for s in samplers))
+            rates = np.hstack([s.source_config.rates for s in samplers])
+            weights = np.hstack([s.source_config.weights for s in samplers])
             amplitudes = np.hstack(
-                (s.source_config.amplitudes for s in samplers))
+                [s.source_config.amplitudes for s in samplers])
             frequencies = np.hstack(
-                (s.source_config.frequencies for s in samplers))
-            phases = np.hstack((s.source_config.phases for s in samplers))
+                [s.source_config.frequencies for s in samplers])
+            phases = np.hstack([s.source_config.phases for s in samplers])
 
             # take setting of the first sampler and assert that all others have
             # the same
@@ -514,11 +514,11 @@ class SinusPoissonSourceConfiguration(SourceConfiguration):
             # if we have one population all get the same sources
             num_sources_per_sampler = (np.zeros(len(samplers), dtype=int) +
                                        len(self.rates))
-            rates = np.hstack((self.rates for s in samplers))
-            weights = np.hstack((self.weights for s in samplers))
-            amplitudes = np.hstack((self.amplitudes for s in samplers))
-            frequencies = np.hstack((self.frequencies for s in samplers))
-            phases = np.hstack((self.phases for s in samplers))
+            rates = np.hstack([self.rates for s in samplers])
+            weights = np.hstack([self.weights for s in samplers])
+            amplitudes = np.hstack([self.amplitudes for s in samplers])
+            frequencies = np.hstack([self.frequencies for s in samplers])
+            phases = np.hstack([self.phases for s in samplers])
             individual_spike_trains = self.individual_spike_trains
             if np.all(weights > 0):
                 raise ValueError("Noise weights are all excitatory. "
