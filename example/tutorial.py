@@ -201,7 +201,8 @@ def sample_network():
             bm.saturating_synapses_enabled = False
 
         bm.gather_spikes(
-                duration=duration, dt=0.1, burn_in_time=500.)
+                duration=duration, dt=0.1, burn_in_time=500.,
+                sim_setup_kwargs={'rng_seeds': [42424242]})
         # bm.save(filename)
 
     # Now we just print out some information and plot the distributions.
