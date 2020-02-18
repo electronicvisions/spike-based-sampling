@@ -441,13 +441,11 @@ class TestBasics(unittest.TestCase):
             bm.dist_marginal_theo, bm.dist_marginal_sim)
         log.info("DKL marginal: {}".format(dkl_marginal))
         self.assertTrue(dkl_marginal > 0)
-        #  self.assertTrue(dkl_marginal < 1) # not assured here
 
         dkl_joint = sbs.utils.dkl(
-                bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())
+            bm.dist_joint_theo.flatten(), bm.dist_joint_sim.flatten())
         log.info("DKL joint: {}".format(dkl_joint))
         self.assertTrue(dkl_joint > 0)
-        #  self.assertTrue(dkl_joint < 1) # not assured here
 
         bm.plot_dist_marginal(prefix="test_basics_fixed_spike-", save=True)
         bm.plot_dist_joint(prefix="test_basics_fixed_spike-", save=True)

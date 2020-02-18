@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-
     Small informal tutorial hastily thrown together to demonstrate how to use
     the spike-based sampling (sbs) library.
 
@@ -563,7 +562,25 @@ if __name__ == "__main__":
                 return True
         return False
 
+    def print_paragraph(text):
+        import textwrap
+        for line in textwrap.wrap(text, width=80, initial_indent="# ",
+                                  subsequent_indent="# "):
+            print(line)
+
     def show_functions():
+        message = "# sbs tutorial (using v{version}) #".format(
+            version=sbs.__version__)
+        barrier = "#" * len(message)
+        print(barrier)
+        print(message)
+        print(barrier)
+        print("#")
+        print_paragraph("The following tutorial functions are defined. "
+                        "Run them by typing:")
+        print("#    python {script} <function-name>".format(
+            script=sys.argv[0]))
+        print("#")
         functions.sort()
         for f in functions:
             print(f)
@@ -576,5 +593,9 @@ if __name__ == "__main__":
                 run = globals()[launch]
                 run()
             else:
-                print(launch, "not part of functions:")
+                print_paragraph(
+                    "ERROR: '{to_launch}' not part of functions!".format(
+                        to_launch=launch))
+                print("#")
                 show_functions()
+                sys.exit(1)
