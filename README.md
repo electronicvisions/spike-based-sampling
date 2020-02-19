@@ -1,5 +1,8 @@
 # sbs
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3675212.svg)](https://doi.org/10.5281/zenodo.3675212)
+[![Build Status](https://jenkins.bioai.eu/buildStatus/icon?job=bld_gerrit-model-nmsampling-sbs)](https://jenkins.bioai.eu/job/bld_gerrit-model-nmsampling-sbs/)
+
 Spike-based-sampling, `sbs`, implements stochastic [LIF
 sampling](https://arxiv.org/abs/1601.00909). It takes care of calibrating LIF
 neurons for given neuron/input parameters and allows the evaluation of
