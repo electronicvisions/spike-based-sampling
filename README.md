@@ -1,6 +1,6 @@
 # sbs
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3675212.svg)](https://doi.org/10.5281/zenodo.3675212)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3675211.svg)](https://doi.org/10.5281/zenodo.3675211)
 [![Build Status](https://jenkins.bioai.eu/buildStatus/icon?job=bld_gerrit-model-nmsampling-sbs)](https://jenkins.bioai.eu/job/bld_gerrit-model-nmsampling-sbs/)
 
 Spike-based-sampling, `sbs`, implements stochastic [LIF
