@@ -205,14 +205,17 @@ def sample_network():
         # http://www.kip.uni-heidelberg.de/Veroeffentlichungen/details.php?id=3735
         #
         # For further details, see: sbs.db.__init__.TsoParameters
-        tso_parameters = sbs.db.TsoParameters()
-        tso_parameters.U = 1.0
-        tso_parameters.u = 1.0
-        tso_parameters.x = 0.0
-        tso_parameters.tau_rec = 10.0
-        tso_parameters.tau_fac = 0.0
-        tso_parameters.weight_rescale = 1.0
+        tso_parameters = sbs.db.TsoParameters(
+            U=1.0,
+            u=1.0,
+            x=0.0,
+            tau_rec=10.0,
+            tau_fac=0.0,
+            weight_rescale=1.0,
+        )
 
+        # We could also just supply a dictionary that gets converted to a
+        # TsoParameters-object automatically.
         bm.tso_params = tso_parameters
 
         if bm.sim_name == "pyNN.neuron":
