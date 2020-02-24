@@ -105,9 +105,23 @@ Install to specific `<folder>`:
 python setup.py install --prefix=<folder>
 ```
 
-
 ## Requirements
 * Python 2 (upgrade to Python 3 happening soon™)
 * PyNN 0.8
 * For [NEST](https://github.com/nest/nest-simulator), the speed-up improvements
   are only tested with versions up to `2.14.0`!
+
+
+## Authors
+
+`sbs` was foolishly written by Oliver Breitwieser with contributions from:
+
+* Andreas Baumbach
+* Agnes Korcsak-Gorzo
+* Johann Klähn.
+* Max Brixner
+
+
+## License 
+`sbs` is licensed under LGPLv3. See [LICENSE](LICENSE) for more information.
+
