@@ -114,13 +114,20 @@ python setup.py install --prefix=<folder>
 
 ## Authors
 
-`sbs` was foolishly written by Oliver Breitwieser with contributions from:
+`sbs` was foolishly written by:
 
-* Andreas Baumbach
-* Agnes Korcsak-Gorzo
-* Johann Klähn.
-* Max Brixner
+* Oliver Breitwieser, Kirchhoff Institute for Physics, Heidelberg University
 
+The following people contributed to the code:
+
+* Andreas Baumbach, Kirchhoff Institute for Physics, Heidelberg University
+* Agnes Korcsak-Gorzo, Forschungszentrum Jülich
+* Johann Klähn, Kirchhoff Institute for Physics, Heidelberg University
+* Max Brixner, Kirchhoff Institute for Physics, Heidelberg University
+
+`sbs` is based on a proof-of-concept prototype developed for the original [LIF
+sampling](https://arxiv.org/abs/1601.00909) paper by Mihai Petrovici, who
+guided the development of `sbs` in terms of theory.
 
 ## License 
 `sbs` is licensed under LGPLv3. See [LICENSE](LICENSE) for more information.
