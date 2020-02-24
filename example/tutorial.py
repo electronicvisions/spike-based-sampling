@@ -199,6 +199,22 @@ def sample_network():
         bm.saturating_synapses_enabled = True
         bm.use_proper_tso = True
 
+        # We can modify the parameters of the short term plasticity mechanism:
+        # This can be used to change the mixing behavior of the network as done
+        # in:
+        # http://www.kip.uni-heidelberg.de/Veroeffentlichungen/details.php?id=3735
+        #
+        # For further details, see: sbs.db.__init__.TsoParameters
+        tso_parameters = sbs.db.TsoParameters()
+        tso_parameters.U = 1.0
+        tso_parameters.u = 1.0
+        tso_parameters.x = 0.0
+        tso_parameters.tau_rec = 10.0
+        tso_parameters.tau_fac = 0.0
+        tso_parameters.weight_rescale = 1.0
+
+        bm.tso_params = tso_parameters
+
         if bm.sim_name == "pyNN.neuron":
             bm.saturating_synapses_enabled = False
 
