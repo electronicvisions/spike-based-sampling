@@ -10,7 +10,7 @@ arbitrary Boltzmann-distributions in static networks.
 
 ## Quickstart
 
-If you want to jump right in, just see the [tutorial](examples/tutorial.py).
+If you want to jump right in, just see the [tutorial](example/tutorial.py).
 
 ## Introduction
 
