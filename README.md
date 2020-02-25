@@ -107,7 +107,11 @@ python setup.py install --prefix=<folder>
 
 ## Requirements
 * Python 2 (upgrade to Python 3 happening soon™)
-* PyNN 0.8
+* `PyNN v0.8` (and a corresponding neural simulator)
+* `numpy`
+* `scipy`
+* `Cython`
+* `matplotlib`
 * For [NEST](https://github.com/nest/nest-simulator), the speed-up improvements
   are only tested with versions up to `2.14.0`!
 
@@ -116,18 +120,43 @@ python setup.py install --prefix=<folder>
 
 `sbs` was foolishly written by:
 
-* Oliver Breitwieser, Kirchhoff Institute for Physics, Heidelberg University
+* **Oliver Breitwieser**, _Kirchhoff Institute for Physics, Heidelberg University_
 
 The following people contributed to the code:
 
-* Andreas Baumbach, Kirchhoff Institute for Physics, Heidelberg University
-* Agnes Korcsak-Gorzo, Forschungszentrum Jülich
-* Johann Klähn, Kirchhoff Institute for Physics, Heidelberg University
-* Max Brixner, Kirchhoff Institute for Physics, Heidelberg University
+* **Andreas Baumbach**, _Kirchhoff Institute for Physics, Heidelberg University_
+* **Agnes Korcsak-Gorzo**, _Forschungszentrum Jülich_
+* **Johann Klähn**, _Kirchhoff Institute for Physics, Heidelberg University_
+* **Max Brixner**, _Kirchhoff Institute for Physics, Heidelberg University_
 
 `sbs` is based on a proof-of-concept prototype developed for the original [LIF
-sampling](https://arxiv.org/abs/1601.00909) paper by Mihai Petrovici, who
-guided the development of `sbs` in terms of theory.
+sampling](https://arxiv.org/abs/1601.00909) paper by **Mihai A. Petrovici** (_University of Bern_), who
+also helped to guide the development of `sbs` in terms of theory.
+
+
+## Publications
+
+Publications in which `sbs` was used include the following:
+
+* __Stochasticity from function - why the Bayesian brain may need no noise__
+  Dominik Dold\*, Ilja Bytschok\*, Akos F. Kungl, Andreas Baumbach, Oliver Breitwieser, Walter Senn, Johannes Schemmel, Karlheinz Meier, Mihai A. Petrovici\*
+  *Neural Networks 119 (2019)* [LINK](http://dx.doi.org/10.1016/j.neunet.2019.08.002)
+
+* __Deterministic networks for probabilistic computing__
+  Jakob Jordan, Mihai A. Petrovici, Oliver Breitwieser, Johannes Schemmel, Karlheinz Meier, Markus Diesmann, Tom Tetzlaff
+  *Scientific Reports 9, 18303 (2019)* [LINK](http://dx.doi.org/10.1038/s41598-019-54137-7)
+
+* __Spiking neurons with short-term synaptic plasticity form superior generative networks__
+  Luziwei Leng\*, Roman Martel, Oliver Breitwieser, Ilja Bytschok, Walter Senn, Johannes Schemmel, Karlheinz Meier & Mihai A. Petrovici\*
+  *Scientific Reports 8, 10651 (2018)* [LINK](http://dx.doi.org/10.1038/s41598-018-28999-2)
+
+* __Simulated Tempering in Biologically Inspired Neural Networks__
+  Agnes Korcsak-Gorzo, Luziwei Leng, Oliver Julien Breitwieser, Johannes Schemmel, Karlheinz Meier, Mihai Alexandru Petrovici
+  *Deutsche Physikerinnentagung (2017)* [LINK](http://www.kip.uni-heidelberg.de/Veroeffentlichungen/details.php?id=3652)
+
+* __Bayesian computing with spikes__
+  A. Baumbach, M. A. Petrovici, L. Leng, O. J. Breitwieser, D. Stoeckel, I. Bytschok, J. Schemmel, K. Meier
+  *1st HBP Student Conference (2017)* [LINK](http://www.kip.uni-heidelberg.de/Veroeffentlichungen/details.php?id=3671)
 
 ## License 
 `sbs` is licensed under LGPLv3. See [LICENSE](LICENSE) for more information.
