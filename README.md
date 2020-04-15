@@ -158,6 +158,13 @@ Publications in which `sbs` was used include the following:
   A. Baumbach, M. A. Petrovici, L. Leng, O. J. Breitwieser, D. Stoeckel, I. Bytschok, J. Schemmel, K. Meier
   *1st HBP Student Conference (2017)* [LINK](http://www.kip.uni-heidelberg.de/Veroeffentlichungen/details.php?id=3671)
 
-## License 
+## Acknowledgements
+
+This open source software code was developed in part in the Human Brain
+Project, funded from the European Union’s Horizon 2020 Framework Programme for
+Research and Innovation under the Specific Grant Agreement No. 720270 (HBP
+SGA1) and 785907 (HBP SGA2).
+
+## License
 `sbs` is licensed under LGPLv3. See [LICENSE](LICENSE) for more information.
 
