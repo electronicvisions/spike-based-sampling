@@ -7,7 +7,12 @@ source "$(dirname "${SCRIPTPATH}")/commons.sh"
 # make sure py-sbs is not loaded for test execution
 source <(spack module tcl loads -r -x py-sbs -x visionary-nest \
          visionary-simulation~dev "^python@:2.999.999")
-source <(spack module tcl loads -r py-nose "^python@:2.999.999")
+
+# default python installation changed to py3 -> need to set PYTHONHOME to avoid
+# conflict of system libraries
+export PYTHONHOME=/opt/spack_views/visionary-simulation
+source <(python2 $(which spack) module tcl loads -r py-nose "^python@:2.999.999")
+
 
 # assert that visionarymodule can be loaded
 (unset NEST_MODULES; python -c "import nest; nest.Install('visionarymodule')")
