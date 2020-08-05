@@ -17,12 +17,9 @@ try {
             inSingularity(app: "visionary-simulation") {
                 jesh "flake8 --tee --output flake8.log"
             }
-            step([$class: 'WarningsPublisher',
-                  parserConfigurations: [[parserName: 'Pep8',
-                                          pattern: 'flake8.log']],
-                  unstableTotalAll: '0',
-                  usePreviousBuildAsReference: true
-                ])
+
+            recordIssues(qualityGates: [[threshold: 1, type: 'TOTAL', unstable: true]],
+                         tools: [pep8(pattern: 'flake8.log')])
         }
     }
     stage("Build") {
@@ -34,11 +31,9 @@ try {
     }
     stage("Analyze log") {
         runOnSlave(label: "frontend") {
-            warnings canComputeNew: false,
-                     canRunOnFailed: true,
-                     consoleParsers: [[parserName: 'GNU C Compiler 4 (gcc)']],
-                     excludePattern: '.*npy_1_7_deprecated_api.h$',
-                     unstableTotalAll: '0'
+            recordIssues(filters: [excludeFile('.*npy_1_7_deprecated_api.h$')],
+                         qualityGates: [[threshold: 1, type: 'TOTAL', unstable: true]],
+                         tools: [gcc()])
         }
     }
     stage("Build model-visionary-nest") {
