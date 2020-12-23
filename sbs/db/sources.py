@@ -578,15 +578,6 @@ class SinusPoissonSourceConfiguration(SourceConfiguration):
         import nest
         gid_generators = np.array(nest.Create(self.source_model,
                                               num_generators))
-
-        # in case all samplers should receive the same spike rates, we simply
-        # introduce another layer of parrot neurons
-        if not individual_spike_trains:
-            hidden_gid_generators = gid_generators
-            gid_generators = np.array(nest.Create("parrot_neurons",
-                                                  num_generators))
-            nest.Connect(hidden_gid_generators, gid_generators, "one_to_one")
-
         # acting as sources
         gid_parrots = np.array(nest.Create("parrot_neuron", num_parrots))
 
@@ -604,6 +595,14 @@ class SinusPoissonSourceConfiguration(SourceConfiguration):
 
             idx_parrot_to_generator[idx] = i
             nest.SetStatus([gid_generators[i]], parameters)
+
+        # in case all samplers should receive the same spike rates, we simply
+        # introduce another layer of parrot neurons
+        if not individual_spike_trains:
+            hidden_gid_generators = gid_generators
+            gid_generators = np.array(nest.Create("parrot_neuron",
+                                                  num_generators))
+            nest.Connect(hidden_gid_generators, gid_generators, "one_to_one")
 
         list_pop = get_population_from_samplers(sim, samplers)
 
