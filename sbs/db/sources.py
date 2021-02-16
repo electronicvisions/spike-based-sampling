@@ -91,40 +91,6 @@ class SourceConfiguration(Data):
 
 
 # helper functions
-def connect_one_to_all(sim, sources, samplers, weights):
-    """
-        BROKEN, DO NOT USE
-
-        Connect each source from `sources` with the corresponding weight from
-        `weights` to all `samplers`.
-    """
-    raise NotImplementedError
-
-    projections = {}
-
-    column_names = ["weight"]
-
-    is_exc = np.array(weights > 0., dtype=int)
-
-    receptor_types = ["inhibitory", "excitatory"]
-
-    for i_r, rectype in enumerate(receptor_types):
-        conn_list = []
-        idx = is_exc == i_r
-
-        for i, weight in it.izip(np.where(idx)[0], weights[idx]):
-            for j in xrange(len(samplers)):
-                conn_list.append((i, j, np.abs(weight)))
-
-        projections[rectype] = sim.Projection(
-            sources, samplers,
-            sim.FromListConnector(conn_list, column_names=column_names),
-            synapse_type=sim.StaticSynapse(),
-            receptor_type=rectype)
-
-    return projections
-
-
 def connect_one_to_one(sim, sources, population, weights):
     """
         `sources` should be a list of lists of sources to be
