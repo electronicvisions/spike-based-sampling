@@ -54,7 +54,7 @@ try {
                 jesh "bash -x .ci/stages/test.sh"
             }
             archiveArtifacts("tests/*.png")
-            step([$class: 'XUnitBuilder',
+            step([$class: 'XUnitPublisher',
                   thresholds: [[$class: 'FailedThreshold', unstableThreshold:'0']],
                   tools: [[$class: 'JUnitType', pattern: 'tests/test_results.xml']]])
         }
